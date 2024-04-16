@@ -3,7 +3,7 @@
 ##
 ## 脚本名称 : Edges select tool
 ## 作者    : 杨陶
-## URL     : https://space.bilibili.com/488687065?spm_id_from=333.1007.0.0
+## URL    : https://github.com/JaimeTao/BonModellingTool.git
 ## 更新时间 : 2024/04/15
 ##
 ##--------------------------------------------------------------------------
