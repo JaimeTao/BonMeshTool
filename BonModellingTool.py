@@ -14,7 +14,7 @@ class Bon_ModellingTool(object):
     def __init__(self):        
         self.window = 'BonModellingTool'
         self.title = 'BonModellingTool'
-        self.size = (330,400)
+        self.size = (300,400)
 
     def create(self):
         if cmds.window('BonModellingTool', exists=True):
@@ -91,12 +91,12 @@ class Bon_ModellingTool(object):
                 #buttonMayaTriangle
                 (self.buttonMayaTriangle, 'top', 5,26),\
                 (self.buttonMayaTriangle, 'left', 5,50),\
-                (self.buttonMayaTriangle, 'bottom', 5,36),\
+                (self.buttonMayaTriangle, 'bottom', 5,38),\
                 (self.buttonMayaTriangle, 'right', 5,100),\
                 #buttonUnityTriangle
                 (self.buttonUnityTriangle, 'top', 5,37),\
                 (self.buttonUnityTriangle, 'left', 5,50),\
-                (self.buttonUnityTriangle, 'bottom', 5,45),\
+                (self.buttonUnityTriangle, 'bottom', 5,48),\
                 (self.buttonUnityTriangle, 'right', 5,100),\
                 #解锁法线
                 (self.buttonUnlockNormal, 'top', 5,26),\
@@ -188,7 +188,7 @@ class Bon_ModellingTool(object):
                 (self.buttonDeleteEdges, 'left', 5,66),\
                 (self.buttonDeleteEdges, 'bottom', 5,87),\
                 (self.buttonDeleteEdges, 'right', 5,100),\
-                #buttonClose               
+                #buttonClose
                 (self.buttonClose, 'top', 5,90),\
                 (self.buttonClose, 'left', 5,0),\
                 (self.buttonClose, 'bottom', 5,100),\
