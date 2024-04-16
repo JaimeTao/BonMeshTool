@@ -3,7 +3,7 @@
 ##
 ## 脚本名称 : Edges select tool
 ## 作者    : 杨陶
-## URL    : https://github.com/JaimeTao/BonModellingTool.git
+## URL     : https://space.bilibili.com/488687065?spm_id_from=333.1007.0.0
 ## 更新时间 : 2024/04/15
 ##
 ##--------------------------------------------------------------------------
@@ -14,7 +14,7 @@ class Bon_ModellingTool(object):
     def __init__(self):        
         self.window = 'BonModellingTool'
         self.title = 'BonModellingTool'
-        self.size = (300,400)
+        self.size = (330,400)
 
     def create(self):
         if cmds.window('BonModellingTool', exists=True):
@@ -43,7 +43,7 @@ class Bon_ModellingTool(object):
         self.separator02 = cmds.separator(st='in')
         self.description03 = cmds.text(l='快速选择工具', al='left')
         self.buttonSelUVBrodenEdge = cmds.button(l='选择UV边界', c=self.SelUVBrodenEdgeCmd)
-        self.buttonSelUVHardenEdge = cmds.button(l='选择硬边', c=self.SelUVHardenEdgeCmd)
+        self.buttonSelHardenEdge = cmds.button(l='选择硬边', c=self.SelHardenEdgeCmd)
         self.separator03 = cmds.separator(st='in')
         self.description04 = cmds.text(l='传递属性工具', al='left')
         self.buttonTranPositoUV = cmds.button(l='位置toUV', c=self.TranPositoUVCmd)
@@ -91,12 +91,12 @@ class Bon_ModellingTool(object):
                 #buttonMayaTriangle
                 (self.buttonMayaTriangle, 'top', 5,26),\
                 (self.buttonMayaTriangle, 'left', 5,50),\
-                (self.buttonMayaTriangle, 'bottom', 5,38),\
+                (self.buttonMayaTriangle, 'bottom', 5,36),\
                 (self.buttonMayaTriangle, 'right', 5,100),\
                 #buttonUnityTriangle
                 (self.buttonUnityTriangle, 'top', 5,37),\
                 (self.buttonUnityTriangle, 'left', 5,50),\
-                (self.buttonUnityTriangle, 'bottom', 5,48),\
+                (self.buttonUnityTriangle, 'bottom', 5,45),\
                 (self.buttonUnityTriangle, 'right', 5,100),\
                 #解锁法线
                 (self.buttonUnlockNormal, 'top', 5,26),\
@@ -129,10 +129,10 @@ class Bon_ModellingTool(object):
                 (self.buttonSelUVBrodenEdge, 'bottom', 5,57),\
                 (self.buttonSelUVBrodenEdge, 'right', 5,50),\
                 #buttonSelUVHardenEdge
-                (self.buttonSelUVHardenEdge, 'top', 5,52),\
-                (self.buttonSelUVHardenEdge, 'left', 5,50),\
-                (self.buttonSelUVHardenEdge, 'bottom', 5,57),\
-                (self.buttonSelUVHardenEdge, 'right', 5,100),\
+                (self.buttonSelHardenEdge, 'top', 5,52),\
+                (self.buttonSelHardenEdge, 'left', 5,50),\
+                (self.buttonSelHardenEdge, 'bottom', 5,57),\
+                (self.buttonSelHardenEdge, 'right', 5,100),\
                 #separator03
                 (self.separator03, 'top', 2,59),\
                 (self.separator03, 'left', 5,0),\
@@ -188,7 +188,7 @@ class Bon_ModellingTool(object):
                 (self.buttonDeleteEdges, 'left', 5,66),\
                 (self.buttonDeleteEdges, 'bottom', 5,87),\
                 (self.buttonDeleteEdges, 'right', 5,100),\
-                #buttonClose
+                #buttonClose               
                 (self.buttonClose, 'top', 5,90),\
                 (self.buttonClose, 'left', 5,0),\
                 (self.buttonClose, 'bottom', 5,100),\
@@ -257,18 +257,9 @@ class Bon_ModellingTool(object):
                     uv_border_edges.append(e)
         if uv_border_edges:
             cmds.select(uv_border_edges)
-    def SelUVHardenEdgeCmd (self, *args):
-        selected_objects = cmds.ls(selection=True)
-        if selected_objects:
-            for obj in selected_objects:
-                cmds.select(obj + '.e[*]', replace=True)
-        else:
-            print("没有对象被选中，请选择一个对象。")
-        cmds.polySelectConstraint(sm=1)
-        cmds.polySelectConstraint(m=3)
-        cmds.polySelectConstraint(m=0, sm=0)
-        cmds.selectMode(component=True)
-        cmds.selectType(edge=True)
+    def SelHardenEdgeCmd (self, *args):
+        cmds.polySelectConstraint(m=3, t=0x8000, sm=1)
+        cmds.polySelectConstraint(m=0)
 
     def TranPositoUVCmd (self, *args):
         mds.transferAttributes(transferPositions=1,sampleSpace=3,searchMethod=3,)
