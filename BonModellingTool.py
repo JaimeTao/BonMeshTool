@@ -262,15 +262,15 @@ class Bon_ModellingTool(object):
         cmds.polySelectConstraint(m=0)
 
     def TranPositoUVCmd (self, *args):
-        mds.transferAttributes(transferPositions=1,sampleSpace=3,searchMethod=3,)
+        cmds.transferAttributes(transferUVs=1,sampleSpace=1,searchMethod=3,)
         cmds.delete(constructionHistory=True)
 
     def TranUVtoPosiCmd (self, *args):
-        cmds.transferAttributes(transferPositions=0,transferUVs=2,sampleSpace=1,searchMethod=3,)
+        cmds.transferAttributes(transferPositions=1,sampleSpace=3,searchMethod=3,)
         cmds.delete(constructionHistory=True)
-
+        
     def TranPositoBordenECmd (self, *args):
-        cmds.transferAttributes(transferPositions=1,sampleSpace=1,searchMethod=3,)
+        cmds.transferAttributes(transferPositions=1,sampleSpace=0,searchMethod=3,)
         cmds.delete(constructionHistory=True)
 
     def get_current_slider_value(self,*args):
