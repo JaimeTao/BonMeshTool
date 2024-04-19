@@ -1,0 +1,4 @@
+from importlib import reload
+from BonModellingTool import BonModellingTool
+reload(BonModellingTool)
+BonModellingTool.main()
