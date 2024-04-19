@@ -3,22 +3,23 @@
 ##
 ## 脚本名称 : Edges select tool
 ## 作者    : 杨陶
-## URL     : https://space.bilibili.com/488687065?spm_id_from=333.1007.0.0
-## 更新时间 : 2024/04/15
+## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
+##E-mail  :taoyangfan@qq.com
+## 更新时间 : 2024/04/20
 ##
 ##--------------------------------------------------------------------------
 import maya.cmds as cmds
 import maya.mel as mel
 
-class Bon_ModellingTool(object):    
+class Bon_ModelingTool(object):    
     def __init__(self):        
-        self.window = 'BonModellingTool'
-        self.title = 'BonModellingTool'
+        self.window = 'BonModelingTool'
+        self.title = 'BonModelingTool'
         self.size = (330,400)
 
     def create(self):
-        if cmds.window('BonModellingTool', exists=True):
-            cmds.deleteUI('BonModellingTool', window=True)
+        if cmds.window('BonModelingTool', exists=True):
+            cmds.deleteUI('BonModelingTool', window=True)
         self.window = cmds.window(
             self.window,
             t=self.title,
@@ -98,7 +99,7 @@ class Bon_ModellingTool(object):
                 (self.buttonUnityTriangle, 'left', 5,50),\
                 (self.buttonUnityTriangle, 'bottom', 5,45),\
                 (self.buttonUnityTriangle, 'right', 5,100),\
-                #解锁法线
+                #buttonUnlockNormal
                 (self.buttonUnlockNormal, 'top', 5,26),\
                 (self.buttonUnlockNormal, 'left', 5,0),\
                 (self.buttonUnlockNormal, 'bottom', 5,31),\
@@ -310,5 +311,5 @@ class Bon_ModellingTool(object):
         mel.eval('DeleteEdge')
         
 def main():
-    BonModellingToolWindow = Bon_ModellingTool()
-    BonModellingToolWindow.create()
+    BonModelingToolWindow = Bon_ModelingTool()
+    BonModelingToolWindow.create()
