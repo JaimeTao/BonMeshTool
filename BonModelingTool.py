@@ -3,7 +3,7 @@
 ##
 ## 脚本名称 : Edges select tool
 ## 作者    : 杨陶
-## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
+## URL     : https://github.com/JaimeTao/BonModelingTool/tree/main
 ##E-mail  :taoyangfan@qq.com
 ## 更新时间 : 2024/04/20
 ##
@@ -11,7 +11,7 @@
 import maya.cmds as cmds
 import maya.mel as mel
 
-class Bon_ModelingTool(object):    
+class BonModelingTool(object):    
     def __init__(self):        
         self.window = 'BonModelingTool'
         self.title = 'BonModelingTool'
@@ -311,5 +311,5 @@ class Bon_ModelingTool(object):
         mel.eval('DeleteEdge')
         
 def main():
-    BonModelingToolWindow = Bon_ModelingTool()
+    BonModelingToolWindow = BonModelingTool()
     BonModelingToolWindow.create()
