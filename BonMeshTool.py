@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 ##--------------------------------------------------------------------------
 ##
-## 脚本名称 : Edges select tool
+## 脚本名称 : BonMeshTool
 ## 作者    : 杨陶
 ## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
 ##E-mail  :taoyangfan@qq.com
@@ -13,6 +13,9 @@ from PySide2.QtWidgets import *
 from PySide2.QtCore import *
 import maya.cmds as cmds
 import maya.mel as mel
+import subprocess
+
+
 
 class CollapsibleSection(QWidget):
     def __init__(self, title="", parent=None):
@@ -38,7 +41,6 @@ class CollapsibleSection(QWidget):
         self.layout().addWidget(self.toggle_button)
         self.layout().addWidget(self.content_area)
         self.content_area.setVisible(self.toggle_button.isChecked())
-
         self.toggle_animation = QPropertyAnimation(self.content_area, b"maximumHeight")
 
     def toggle(self):
@@ -67,6 +69,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         self.setMinimumHeight(400)
         self.setLayout(QVBoxLayout())
         self.layout().setAlignment(Qt.AlignTop)
+        self.setup_dirs()
 
         # Section for UV renaming
         uv_section = CollapsibleSection("重命名并删除多余UV集！")
@@ -198,6 +201,45 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         interval_section.addWidget(button_widget)
         self.layout().addWidget(interval_section)
 
+
+        #Section for RizomUV Bridge
+        Bridge_section = CollapsibleSection("RizomUV Bridge")
+        Bridge_Dir_widget = QWidget()  # 创建一个新的QWidget
+        Bridge_Dir_layout = QHBoxLayout()  # 创建水平布局
+        Bridge_Dir_button = QPushButton('更新路径')
+        self.Bridge_Dir_line_edit = QLineEdit()  # 保存引用
+        if cmds.optionVar(exists="RizomUVPath"):
+            self.Bridge_Dir_line_edit.setText(cmds.optionVar(q="RizomUVPath"))
+        else:
+            self.Bridge_Dir_line_edit.setText(r'C:\Program Files\Rizom Lab\RizomUV 2023.0\rizomuv.exe')
+        Bridge_Dir_layout.addWidget(Bridge_Dir_button)
+        Bridge_Dir_layout.addWidget(self.Bridge_Dir_line_edit)
+        Bridge_Dir_widget.setLayout(Bridge_Dir_layout)  # 将布局设置到QWidget上
+        Bridge_section.addWidget(Bridge_Dir_widget)  # 添加QWidget到CollapsibleSection
+        self.layout().addWidget(Bridge_section)
+        Bridge_Dir_button.clicked.connect(self.update_path)
+
+        # New section with three horizontally distributed buttons in a second row
+        button_row_widget = QWidget()
+        button_row_layout = QHBoxLayout()
+        export_button = QPushButton('导出')
+        import_button = QPushButton('导入')
+        launch_button = QPushButton('启动RizomUV')
+        button_row_layout.addWidget(export_button)
+        button_row_layout.addWidget(import_button)
+        button_row_layout.addWidget(launch_button)
+        button_row_widget.setLayout(button_row_layout)
+        Bridge_section.addWidget(button_row_widget)  # 添加到同一个CollapsibleSection
+        export_button.clicked.connect(self.export_obj)
+        import_button.clicked.connect(self.import_obj)
+        launch_button.clicked.connect(self.launch_rizom)
+        interval_section.addWidget(slider_widget)
+        interval_section.addWidget(button_widget)
+        # Update the layout to include the new section
+        self.layout().addWidget(Bridge_section)
+
+
+
     def RenameUVSetCmd(self, *args):
         selected_objects = cmds.ls(type='mesh')
         desired_name = self.rename_line_edit.text()  # 获取文本输入框的内容
@@ -313,7 +355,60 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         mel.eval('polySelectEdgesEveryN("edgeRing", {0})'.format(n))
         mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
         mel.eval('DeleteEdge')
+###
+    def update_path(self):
+        new_path = self.Bridge_Dir_line_edit.text()
+        cmds.optionVar(sv=("RizomUVPath", new_path))
+        self.write_loader()
+        
+    def setup_dirs(self):
+        self.ObjectType = 'fbx'
+        self.MayaScriptDir = cmds.internalVar(userScriptDir=True)
+        self.BridgeDir = self.MayaScriptDir + 'BonModelingTool/'
+        self.ObjectDir = self.BridgeDir + 'data/RBMObject.' + self.ObjectType
+        self.LoaderDir = self.BridgeDir + 'data/Loader.lua'
+        self.ConfigDir = self.BridgeDir + 'data/config.json'
 
+    def write_loader(self):
+        self.RizomUVDir = self.Bridge_Dir_line_edit.text()
+        ZomLuaScript = ('ZomLoad({File={Path="' + self.ObjectDir + '", ImportGroups=true, XYZUVW=true, UVWProps=true}})')
+        U3dLuaScript = ('U3dLoad({File={Path="' + self.ObjectDir + '", ImportGroups=true, XYZUVW=true, UVWProps=true}})')
+        if 'rizomuv.exe' in self.RizomUVDir:
+            with open(self.LoaderDir, 'wt') as f:
+                f.write(ZomLuaScript)
+                cmds.warning('Write RizomUV Loader Complete!')
+        else:
+            cmds.warning('Write Loader Error!')
+
+    def export_obj(self):
+        self.write_loader()
+        SelOBJ = cmds.ls(sl=True)
+        if 'fbx' in self.ObjectType:
+            cmds.file(self.ObjectDir, force=1, type='FBX export', op='groups=1', pr=1, es=1)
+            print('Export FBX complete!')
+        elif 'obj' in self.ObjectType:
+            cmds.file(self.ObjectDir, force=1, type="OBJexport", options="groups=1;ptgroups=1;materials=1;smoothing=1;normals=1", es=1)
+            cmds.warning('Export OBJ complete!')
+        else:
+            cmds.error('Export Object Type Error!')
+
+    def launch_rizom(self):
+        subprocess.Popen('"' + self.RizomUVDir + '"' + ' -cfi ' + self.LoaderDir)
+
+    def import_obj(self):
+        SelOBJ = cmds.ls(sl=True)
+        for item in SelOBJ:
+            cmds.delete()
+        if 'fbx' in self.ObjectType:
+            cmds.file(self.ObjectDir, i=1, ignoreVersion=1, mergeNamespacesOnClash=0, rpr='RBMObject', type='FBX', pr=1)
+            cmds.select(SelOBJ, r=True)
+            print('Import FBX complete!')
+        elif 'obj' in self.ObjectType:
+            cmds.file(self.ObjectDir, i=1, gn='RizomUVBridge', type="OBJ", gr=1)
+            cmds.warning('Import OBJ complete!')
+        else:
+            cmds.error('Import Object Type Error!')
+###
 def show_bon_modeling_tool_ui():
     global bon_modeling_tool_ui
     try:
