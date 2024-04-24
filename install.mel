@@ -1,0 +1,28 @@
+global proc addPythonCommandToShelf() {
+    // 获取当前激活的工具架
+    global string $gShelfTopLevel;
+    string $currentShelf = `tabLayout -query -selectTab $gShelfTopLevel`;
+    setParent $currentShelf;
+
+    // 设置脚本的位置和图标
+    string $bonScriptLocation = `internalVar -userScriptDir` + "BonModelingTool/";
+    string $iconPath = $bonScriptLocation + "BonModelingTool_icon.png";
+
+    // 构建 Python 命令字符串
+    string $pythonCommand = "from importlib import reload;";
+    $pythonCommand += "from BonModelingTool import BonMeshTool;";
+    $pythonCommand += "reload(BonMeshTool);";
+    $pythonCommand += "BonMeshTool.main()";
+
+    // 创建工具架按钮，直接设置 Python 命令
+    shelfButton
+        -command $pythonCommand
+        -annotation "Execute BonMeshTool.main()"
+        -label "BMTools"
+        -image $iconPath
+        -image1 $iconPath
+        -sourceType "python";
+}
+
+// 调用函数以添加按钮
+addPythonCommandToShelf();
