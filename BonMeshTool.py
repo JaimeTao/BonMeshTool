@@ -253,7 +253,8 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cuvname = cmds.getAttr(f"{each_element}.uvSet[0].uvSetName")
             if cuvname != desired_name:
                 cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
-        cmds.warning("重命名UV集为：", desired_name)
+        #cmds.warning("重命名UV集为：", desired_name)
+        cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
 
     def DisplayTriangle(self, *args):
         isChecked = self.display_triangle_checkbox.isChecked()
