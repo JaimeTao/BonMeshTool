@@ -5,7 +5,7 @@
 ## 作者    : 杨陶
 ## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
 ##E-mail  :taoyangfan@qq.com
-## 更新时间 : 2024/04/20
+## 更新时间 : 2024/04/24
 ##
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
@@ -376,9 +376,9 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         if 'rizomuv.exe' in self.RizomUVDir:
             with open(self.LoaderDir, 'wt') as f:
                 f.write(ZomLuaScript)
-                cmds.warning('Write RizomUV Loader Complete!')
+                cmds.inViewMessage(amg='RizomUV写入成功!', pos='midCenter', fade=True)
         else:
-            cmds.warning('Write Loader Error!')
+            cmds.inViewMessage(amg='RizomUV写入失败!', pos='midCenter', fade=True)
 
     def export_obj(self):
         self.write_loader()
