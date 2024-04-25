@@ -5,7 +5,7 @@
 ## 作者    : 杨陶
 ## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
 ##E-mail  :taoyangfan@qq.com
-## 更新时间 : 2024/04/24
+## 更新时间 : 2024/04/25
 ##
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
@@ -365,7 +365,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def setup_dirs(self):
         self.ObjectType = 'fbx'
         self.MayaScriptDir = cmds.internalVar(userScriptDir=True)
-        self.BridgeDir = self.MayaScriptDir + 'BonModelingTool/'
+        self.BridgeDir = self.MayaScriptDir + 'BonMeshTool/'
         self.ObjectDir = self.BridgeDir + 'data/RBMObject.' + self.ObjectType
         self.LoaderDir = self.BridgeDir + 'data/Loader.lua'
         self.ConfigDir = self.BridgeDir + 'data/config.json'
@@ -410,16 +410,16 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         else:
             cmds.error('Import Object Type Error!')
 ###
-def show_bon_modeling_tool_ui():
-    global bon_modeling_tool_ui
+def show_bon_mesh_tool_ui():
+    global bon_mesh_tool_ui
     try:
-        bon_modeling_tool_ui.close()
-        bon_modeling_tool_ui.deleteLater()
+        bon_mesg_tool_ui.close()
+        bon_mesh_tool_ui.deleteLater()
     except:
         pass
 
-    bon_modeling_tool_ui = BonModelingToolUI()
-    bon_modeling_tool_ui.show(dockable=True, area='right', allowedArea='all', width=330, height=400, floating=False)
+    bon_mesh_tool_ui = BonMeshToolUI()
+    bon_mesh_tool_ui.show(dockable=True, area='right', allowedArea='all', width=330, height=400, floating=False)
 
 def main():
     global bon_mesh_tool_ui
