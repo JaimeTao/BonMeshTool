@@ -1,4 +1,0 @@
-from importlib import reload
-from BonModelingTool import BonMeshTool
-reload(BonMeshTool)
-BonMeshTool.main()
