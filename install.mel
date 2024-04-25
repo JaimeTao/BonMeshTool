@@ -1,20 +1,20 @@
 global proc addPythonCommandToShelf() {
-    // »ñÈ¡µ±Ç°¼¤»îµÄ¹¤¾ß¼Ü
+    // è·å–å½“å‰æ¿€æ´»çš„å·¥å…·æ¶
     global string $gShelfTopLevel;
     string $currentShelf = `tabLayout -query -selectTab $gShelfTopLevel`;
     setParent $currentShelf;
 
-    // ÉèÖÃ½Å±¾µÄÎ»ÖÃºÍÍ¼±ê
-    string $bonScriptLocation = `internalVar -userScriptDir` + "BonModelingTool/";
-    string $iconPath = $bonScriptLocation + "BonModelingTool_icon.png";
+    // è®¾ç½®è„šæœ¬çš„ä½ç½®å’Œå›¾æ ‡
+    string $bonScriptLocation = `internalVar -userScriptDir` + "BonMeshTool/";
+    string $iconPath = $bonScriptLocation + "BonMeshTool_icon.png";
 
-    // ¹¹½¨ Python ÃüÁî×Ö·û´®
+    // æ„å»º Python å‘½ä»¤å­—ç¬¦ä¸²
     string $pythonCommand = "from importlib import reload;";
-    $pythonCommand += "from BonModelingTool import BonMeshTool;";
+    $pythonCommand += "from BonMeshTool import BonMeshTool;";
     $pythonCommand += "reload(BonMeshTool);";
     $pythonCommand += "BonMeshTool.main()";
 
-    // ´´½¨¹¤¾ß¼Ü°´Å¥£¬Ö±½ÓÉèÖÃ Python ÃüÁî
+    // åˆ›å»ºå·¥å…·æ¶æŒ‰é’®ï¼Œç›´æ¥è®¾ç½® Python å‘½ä»¤
     shelfButton
         -command $pythonCommand
         -annotation "Execute BonMeshTool.main()"
@@ -24,5 +24,5 @@ global proc addPythonCommandToShelf() {
         -sourceType "python";
 }
 
-// µ÷ÓÃº¯ÊıÒÔÌí¼Ó°´Å¥
+// è°ƒç”¨å‡½æ•°ä»¥æ·»åŠ æŒ‰é’®
 addPythonCommandToShelf();
