@@ -5,8 +5,8 @@
 ## 作者    : 杨陶
 ## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
 ##E-mail  :taoyangfan@qq.com
-## 更新时间 : 2024/04/25
-##
+## 更新时间 : 2024/06/27
+## 添加功能：存储所选边、选择存储边
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -15,7 +15,13 @@ import maya.cmds as cmds
 import maya.mel as mel
 import subprocess
 
+def save_settings(key_name, value):
+    cmds.optionVar(stringValue=(key_name, str(value)))
 
+def load_settings(key_name, default_value=''):
+    if cmds.optionVar(exists=key_name):
+        return cmds.optionVar(query=key_name)
+    return default_value
 
 class CollapsibleSection(QWidget):
     def __init__(self, title="", parent=None):
@@ -65,6 +71,13 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def __init__(self, parent=None):
         super(BonMeshToolUI, self).__init__(parent)
         self.setWindowTitle('BonMeshTool')
+        self.window_name = 'BonMeshToolUI'
+        # 加载窗口设置
+        self.restore_window_settings()
+        self.setLayout(QVBoxLayout())
+        self.layout().setAlignment(Qt.AlignTop)
+        self.setup_dirs()
+        
         self.setMinimumWidth(250)
         self.setMinimumHeight(400)
         self.setLayout(QVBoxLayout())
@@ -129,20 +142,34 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         triangle_section.addWidget(triangle_row2_widget)
         # 将整个CollapsibleSection添加到主布局
         self.layout().addWidget(triangle_section)
-
         # Section for quick selection tools
         selection_section = CollapsibleSection("快速选择工具")
         selection_widget = QWidget()  # 创建一个新的QWidget
-        selection_layout = QHBoxLayout()  # 创建水平布局
+        selection_layout = QVBoxLayout()  # 创建垂直布局，用于将按钮分成两行
+        # 第一行布局，包含“选择UV边界”和“选择硬边”按钮
+        first_row_layout = QHBoxLayout()
         select_uv_edges_button = QPushButton('选择UV边界')
         select_hard_edges_button = QPushButton('选择硬边')
-        selection_layout.addWidget(select_uv_edges_button)
-        selection_layout.addWidget(select_hard_edges_button)
-        selection_widget.setLayout(selection_layout)  # 将布局设置到QWidget上
+        first_row_layout.addWidget(select_uv_edges_button)
+        first_row_layout.addWidget(select_hard_edges_button)
+        # 第二行布局，包含“存储选择边”和“选择存储边”按钮
+        second_row_layout = QHBoxLayout()
+        store_edges_button = QPushButton('存储选择边')
+        select_stored_edges_button = QPushButton('选择存储边')
+        second_row_layout.addWidget(store_edges_button)
+        second_row_layout.addWidget(select_stored_edges_button)
+        # 将两个行布局添加到主垂直布局
+        selection_layout.addLayout(first_row_layout)
+        selection_layout.addLayout(second_row_layout)
+        # 将布局设置到QWidget上
+        selection_widget.setLayout(selection_layout)
         selection_section.addWidget(selection_widget)  # 添加QWidget到CollapsibleSection
         self.layout().addWidget(selection_section)
-        select_uv_edges_button.clicked.connect(self.SelUVBrodenEdgeCmd)# 匹配按钮
-        select_hard_edges_button.clicked.connect(self.SelHardenEdgeCmd)# 匹配按钮
+        # 绑定按钮到函数
+        select_uv_edges_button.clicked.connect(self.SelUVBrodenEdgeCmd)  # 绑定选择UV边界按钮到函数
+        select_hard_edges_button.clicked.connect(self.SelHardenEdgeCmd)  # 绑定选择硬边按钮到函数
+        store_edges_button.clicked.connect(self.store_selected_edges)  # 绑定存储选择边按钮到函数
+        select_stored_edges_button.clicked.connect(self.select_stored_edges)  # 绑定选择存储边按钮到函数
         # Section for transferring attributes
         transfer_section = CollapsibleSection("传递属性工具")
         transfer_widget = QWidget()  # 创建一个新的QWidget
@@ -305,6 +332,30 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def SelHardenEdgeCmd (self, *args):
         cmds.polySelectConstraint(m=3, t=0x8000, sm=1)
         cmds.polySelectConstraint(m=0)
+    ##
+    def store_selected_edges(self, *args):
+        global stored_edges
+        selected_edges = cmds.ls(selection=True, flatten=True)
+
+        if not selected_edges:
+            cmds.warning("请选择一些边来存储。")
+            return
+
+        stored_edges = selected_edges
+        print(f"存储了 {len(stored_edges)} 条边。")
+
+    def select_stored_edges(self, *args):
+        global stored_edges
+
+        if not stored_edges:
+            cmds.warning("没有存储的边信息。")
+            return
+
+        try:
+            cmds.select(stored_edges, replace=True)
+            print(f"选择了 {len(stored_edges)} 条边。")
+        except RuntimeError as e:
+            cmds.warning(f"选择存储的边时出错: {e}")
 
     def TranPositoUVCmd (self, *args):
         cmds.transferAttributes(transferUVs=1,sampleSpace=1,searchMethod=3,)
@@ -409,19 +460,30 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cmds.warning('Import OBJ complete!')
         else:
             cmds.error('Import Object Type Error!')
+            
+    def restore_window_settings(self):
+        # 窗口大小
+        width = int(load_settings(self.window_name + '_width', 250))
+        height = int(load_settings(self.window_name + '_height', 400))
+        self.resize(width, height)
+            
+    def save_window_settings(self):
+        # 保存窗口大小
+        width = self.width()
+        height = self.height()
+        save_settings(self.window_name + '_width', width)
+        save_settings(self.window_name + '_height', height)
+        
+        # 保存窗口位置
+        pos = self.pos()
+        save_settings(self.window_name + '_position', '{},{}'.format(pos.x(), pos.y()))
+
+    def closeEvent(self, event):
+        self.save_window_settings()
+        super(BonMeshToolUI, self).closeEvent(event)
+
 ###
 def show_bon_mesh_tool_ui():
-    global bon_mesh_tool_ui
-    try:
-        bon_mesg_tool_ui.close()
-        bon_mesh_tool_ui.deleteLater()
-    except:
-        pass
-
-    bon_mesh_tool_ui = BonMeshToolUI()
-    bon_mesh_tool_ui.show(dockable=True, area='right', allowedArea='all', width=330, height=400, floating=False)
-
-def main():
     global bon_mesh_tool_ui
     try:
         bon_mesh_tool_ui.close()
@@ -430,6 +492,9 @@ def main():
         pass
     bon_mesh_tool_ui = BonMeshToolUI()
     bon_mesh_tool_ui.show(dockable=True, area='right', allowedArea='all', width=330, height=400, floating=False)
+
+def main():
+    show_bon_mesh_tool_ui()
 
 if __name__ == '__main__':
     main()
