@@ -6,7 +6,7 @@
 ## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
 ##E-mail  :taoyangfan@qq.com
 ## 更新时间 : 2024/06/27
-## 添加功能：存储所选边、选择存储边
+## 添加功能：存储所选边、选择存储边、优化快速选择工具残留选择状态的bug
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -311,27 +311,65 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         self.SoftenEdgeCmd()
 
     def SelUVBrodenEdgeCmd(self, *args):
+        # 第一步：获取当前选择的对象并存储
         selection = cmds.ls(sl=True, l=True)
+        if not selection:
+            cmds.inViewMessage(amg='没有选择任何对象!', pos='midCenter', fade=True)
+            return
+
+        # 第二步：对当前对象执行边选择操作
+        cmds.SelectEdgeMask()          # 启用边选择掩码
+        cmds.selectType(edge=True)     # 设置选择类型为边
+        cmds.select(deselect=True)     # 清空当前选择
+
+        # 第三步：重新选择之前存储的对象
+        cmds.select(selection)
+
+        # 第四步：执行选择 UV 边界的逻辑
         mesh_edges = []
         uv_border_edges = []
+
         for s in selection:
             try:
-                mesh_edges.extend(cmds.ls(cmds.polyListComponentConversion(s, te=True), fl=True, l=True))
+                edges = cmds.polyListComponentConversion(s, te=True)
+                edges = cmds.ls(edges, fl=True, l=True)
+                mesh_edges.extend(edges)
             except:
                 pass
+
         if mesh_edges:
             for e in mesh_edges:
                 edge_uvs = cmds.ls(cmds.polyListComponentConversion(e, tuv=True), fl=True)
                 edge_faces = cmds.ls(cmds.polyListComponentConversion(e, tf=True), fl=True)
+                
+                # 判断是否为UV边界边或孤立边
                 if len(edge_uvs) > 2:
                     uv_border_edges.append(e)
                 elif len(edge_faces) < 2:
                     uv_border_edges.append(e)
+
+        # 如果找到 UV 边界边，选择这些边
         if uv_border_edges:
             cmds.select(uv_border_edges)
+
     def SelHardenEdgeCmd (self, *args):
+        selected_objects = cmds.ls(selection=True)
+        if not selected_objects:
+            cmds.inViewMessage(amg='没有选择任何对象!', pos='midCenter', fade=True)
+            return
+
+        # 第二步：对当前对象执行边选择操作
+        cmds.SelectEdgeMask()
+        cmds.selectType(edge=True)
+        cmds.select(deselect=True)
+
+        # 第三步：重新选择之前存储的对象
+        cmds.select(selected_objects)
+
+        # 设置边选择约束
         cmds.polySelectConstraint(m=3, t=0x8000, sm=1)
         cmds.polySelectConstraint(m=0)
+
     ##
     def store_selected_edges(self, *args):
         global stored_edges
