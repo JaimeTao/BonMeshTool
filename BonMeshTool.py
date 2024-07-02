@@ -4,9 +4,11 @@
 ## 脚本名称 : BonMeshTool
 ## 作者    : 杨陶
 ## URL     : https://github.com/JaimeTao/BonModellingTool/tree/main
-##E-mail  :taoyangfan@qq.com
+##E-mail   : taoyangfan@qq.com
 ## 更新时间 : 2024/06/27
-## 添加功能：存储所选边、选择存储边。优化快速选择工具、选择存储边残留选择状态的bug
+## 添加功能 : 存储所选边、选择存储边。优化快速选择工具、选择存储边残留选择状态的bug
+## 更新时间 : 2024/07/02
+## 添加功能 : 间隔选择工具添加Loop功能
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -187,48 +189,95 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         transfer_layout.addWidget(transfer_uv_to_pos_button)
         transfer_layout.addWidget(transfer_pos_to_border_button)
 
+        '''快速选择部分'''
         # 设置布局到QWidget
         transfer_widget.setLayout(transfer_layout)
+
         # 添加QWidget到CollapsibleSection
         transfer_section.addWidget(transfer_widget)
+
         # 将transfer_section添加到主布局
         self.layout().addWidget(transfer_section)
+
         # Section for interval selection tools
         interval_section = CollapsibleSection("间隔选择工具")
+
         # 为滑动条和值标签创建一个独立的QWidget
         slider_widget = QWidget()
-        slider_layout = QHBoxLayout()  # 使用水平布局来放置标签和滑动条
-        # 创建显示滑动条值的标签，并设置初始文本
-        self.value_label = QLabel("间隔数量: %d" % 1)  # 假设初始值为1
-        # 创建和配置滑动条
+        slider_layout = QVBoxLayout()  # 使用垂直布局来放置多个水平布局
+
+        # 间隔数量滑动条的布局
+        interval_slider_layout = QHBoxLayout()  # 使用水平布局来放置标签和滑动条
+
+        # 创建显示间隔数量滑动条值的标签，并设置初始文本
+        self.Ring_value_label = QLabel("Ring间隔数: %d" % 1)  # 假设初始值为1
+
+        # 创建和配置间隔数量滑动条
         self.slider = QSlider(Qt.Horizontal)
-        self.slider.setMinimum(1)  # 设置滑动条的最小值
+        self.slider.setMinimum(0)  # 设置滑动条的最小值
         self.slider.setMaximum(20)  # 设置滑动条的最大值
         self.slider.setValue(1)  # 设置滑动条的初始值
+
         # 将标签和滑动条添加到水平布局中，标签在前
-        slider_layout.addWidget(self.value_label)
-        slider_layout.addWidget(self.slider)
+        interval_slider_layout.addWidget(self.Ring_value_label)
+        interval_slider_layout.addWidget(self.slider)
+
         # 连接滑动条的信号到一个槽函数以更新标签
-        self.slider.valueChanged.connect(self.slider_value_changed)
-        slider_widget.setLayout(slider_layout)  # 设置布局到QWidget
+        self.slider.valueChanged.connect(self.Ring_slider_value_changed)
+
+        # 将间隔数量滑动条的布局添加到主滑动条布局
+        slider_layout.addLayout(interval_slider_layout)
+
+        # Loop滑动条的布局
+        loop_slider_layout = QHBoxLayout()  # 使用水平布局来放置标签和滑动条
+
+        # 创建显示loop滑动条值的标签，并设置初始文本
+        self.loop_value_label = QLabel("loop间隔数: %d" % 0)  # 假设初始值为0
+
+        # 创建和配置loop滑动条
+        self.loop_slider = QSlider(Qt.Horizontal)
+        self.loop_slider.setMinimum(0)  # 设置滑动条的最小值
+        self.loop_slider.setMaximum(20)  # 设置滑动条的最大值
+        self.loop_slider.setValue(0)  # 设置滑动条的初始值
+
+        # 将标签和滑动条添加到水平布局中，标签在前
+        loop_slider_layout.addWidget(self.loop_value_label)
+        loop_slider_layout.addWidget(self.loop_slider)
+
+        # 连接loop滑动条的信号到一个槽函数以更新标签
+        self.loop_slider.valueChanged.connect(self.loop_slider_value_changed)
+
+        # 将loop滑动条的布局添加到主滑动条布局
+        slider_layout.addLayout(loop_slider_layout)
+
+        # 设置滑动条布局到QWidget
+        slider_widget.setLayout(slider_layout)
+
+        # 创建和配置按钮的布局
         button_widget = QWidget()
         button_layout = QHBoxLayout()
-        to_rings_button = QPushButton('到平行边')
-        ring_loop_button = QPushButton('到环形边')
-        delete_edges_button = QPushButton('删除环边')
+        to_rings_button = QPushButton('间隔选择')
+        Extend_to_Ring_button = QPushButton('Ring延伸')
+        Extend_to_Loops_button = QPushButton('Loop延伸')
+
         button_layout.addWidget(to_rings_button)
-        button_layout.addWidget(ring_loop_button)
-        button_layout.addWidget(delete_edges_button)
+        button_layout.addWidget(Extend_to_Ring_button)
+        button_layout.addWidget(Extend_to_Loops_button)
+
         button_widget.setLayout(button_layout)
+
         # 连接按钮到函数
         to_rings_button.clicked.connect(self.ToRingsCmd)
-        ring_loop_button.clicked.connect(self.RingLoopCmd)
-        delete_edges_button.clicked.connect(self.DeleteEdgesCmd)
+        Extend_to_Ring_button.clicked.connect(self.Extend_to_RingCmd)
+        Extend_to_Loops_button.clicked.connect(self.Extend_to_LoopCmd)
+        
+        # 将滑动条和按钮的Widget添加到间隔选择工具的section中
         interval_section.addWidget(slider_widget)
         interval_section.addWidget(button_widget)
+
+        # 将间隔选择工具的section添加到主布局
         self.layout().addWidget(interval_section)
-
-
+        '''快速选择部分'''
         #Section for RizomUV Bridge
         Bridge_section = CollapsibleSection("RizomUV Bridge")
         Bridge_Dir_widget = QWidget()  # 创建一个新的QWidget
@@ -260,8 +309,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         export_button.clicked.connect(self.export_obj)
         import_button.clicked.connect(self.import_obj)
         launch_button.clicked.connect(self.launch_rizom)
-        interval_section.addWidget(slider_widget)
-        interval_section.addWidget(button_widget)
         # Update the layout to include the new section
         self.layout().addWidget(Bridge_section)
 
@@ -408,12 +455,20 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         cmds.transferAttributes(transferPositions=1,sampleSpace=0,searchMethod=3,)
         cmds.delete(constructionHistory=True)
 
-    def slider_value_changed(self, value):
-        self.value_label.setText("间隔数量: %d" % value)
+    def Ring_slider_value_changed(self, value):
+        self.Ring_value_label.setText("Ring间隔数: %d" % value)
 
-    def get_current_slider_value(self):
+    def loop_slider_value_changed(self, value):
+        self.loop_value_label.setText("loop间隔数: %d" % value)
+
+    def get_current_Ring_slider_value(self):
         current_value = self.slider.value()
         print("Current slider value:", current_value)
+        return current_value
+##11
+    def get_current_loop_slider_value(self):
+        current_value = self.loop_slider.value()
+        print("Current loop slider value:", current_value)
         return current_value
 
     def get_selected_edge_count(self):
@@ -427,25 +482,30 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
     def ToRingsCmd(self):
         edge_count = self.get_selected_edge_count()
-        current_value = self.get_current_slider_value()
-        n = edge_count + current_value
-        mel.eval('polySelectEdgesEveryN("edgeRing", {0})'.format(n))
-        mel.eval('polySelectEdgesEveryN("edgeLoop", 0)',0)
+        current_Ring_value = self.get_current_Ring_slider_value()
+        current_Loop_value = self.get_current_loop_slider_value()
 
-    def RingLoopCmd(self):
-        edge_count = self.get_selected_edge_count()
-        current_value = self.get_current_slider_value()
-        n = edge_count + current_value
-        mel.eval('polySelectEdgesEveryN("edgeRing", {0})'.format(n))
-        mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
+        # Condition for edgeRing selection
+        if current_Ring_value != 0:
+            n = edge_count + current_Ring_value
+            print("Computed Ring value (n):", n)
+            mel.eval('polySelectEdgesEveryN("edgeRing", {0})'.format(n))
 
-    def DeleteEdgesCmd(self):
-        edge_count = self.get_selected_edge_count()
-        current_value = self.get_current_slider_value()
-        n = edge_count + current_value
-        mel.eval('polySelectEdgesEveryN("edgeRing", {0})'.format(n))
+        # Condition for edgeLoop selection
+        x = edge_count + current_Loop_value
+        if current_Loop_value != 0:
+            x = edge_count + current_Loop_value
+        else:
+            x = -1
+        print("Computed Loop value (x):", x)
+        mel.eval('polySelectEdgesEveryN("edgeLoop", {0})'.format(x))
+            
+    def Extend_to_RingCmd(self):
+        mel.eval('polySelectEdgesEveryN("edgeRing", 1)')
+        
+    def Extend_to_LoopCmd(self):
         mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
-        mel.eval('DeleteEdge')
+        
 ###
     def update_path(self):
         new_path = self.Bridge_Dir_line_edit.text()
