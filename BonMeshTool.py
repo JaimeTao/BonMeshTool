@@ -11,6 +11,8 @@
 ## 添加功能 : 间隔选择工具添加Loop功能
 ## 更新时间 : 2024/07/02-版本02
 ## 添加功能 : 窗口底部添加添加自动更新和保存窗口（占位）按钮
+## 更新时间 : 2024/07/02-版本03
+## 添加功能 : 测试更新git pull功能
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
