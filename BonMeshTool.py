@@ -9,6 +9,8 @@
 ## 添加功能 : 存储所选边、选择存储边。优化快速选择工具、选择存储边残留选择状态的bug
 ## 更新时间 : 2024/07/02
 ## 添加功能 : 间隔选择工具添加Loop功能
+## 更新时间 : 2024/07/03
+## 添加功能 : 按照系统自带的Modeling Toolkit的颜色标准修改UI
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -34,7 +36,8 @@ class CollapsibleSection(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
 
         self.toggle_button = QToolButton(text=title, checkable=True, checked=True)
-        self.toggle_button.setStyleSheet("QToolButton { border: none; }")
+        self.toggle_button.setStyleSheet("QToolButton { border: none; padding-top: 3px; padding-bottom: 3px; color: #bbbbbb; font-weight: bold; background-color: #3c3c3c; font-size: 18px;}")
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setArrowType(Qt.DownArrow)
         self.toggle_button.clicked.connect(self.toggle)
