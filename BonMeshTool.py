@@ -12,7 +12,7 @@
 ## 更新时间 : 2024/07/02-版本02
 ## 添加功能 : 窗口底部添加添加自动更新和保存窗口（占位）按钮
 ## 更新时间 : 2024/07/02-版本03
-## 添加功能 : 测试更新git pull功能
+## 添加功能 : 添加git pull更新功能
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -20,6 +20,7 @@ from PySide2.QtCore import *
 import maya.cmds as cmds
 import maya.mel as mel
 import subprocess
+import os
 
 def save_settings(key_name, value):
     cmds.optionVar(stringValue=(key_name, str(value)))
@@ -580,22 +581,26 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         else:
             cmds.error('Import Object Type Error!')
 
-    def updateBonMeshTool():
-        # 获取当前脚本所在的目录
-        script_directory = os.path.dirname(__file__)
-    
-        # 获取 BonMeshTool 的根目录
-        bon_mesh_tool_dir = os.path.abspath(os.path.join(script_directory, '..', 'BonMeshTool'))
-    
-        # 切换到 BonMeshTool 目录并执行 git pull 命令
+    def updateBonMeshTool(self):
+        # 获取Maya用户自定义脚本目录
+        script_directory = cmds.internalVar(userScriptDir=True)
+        
+        # 拼接完整路径
+        full_path = os.path.join(script_directory, 'BonMeshTool')
+        
+        # 打印完整路径
+        print("完整路径:", full_path)
+        
+        # 创建BonMeshTool文件夹（如果不存在）
+        if not os.path.exists(full_path):
+            os.makedirs(full_path)
+        
+        # 执行git pull命令
         try:
-            os.chdir(bon_mesh_tool_dir)
-            subprocess.run(['git', 'pull'])
-            print('BonMeshTool 更新成功.')
-        except FileNotFoundError:
-            print('找不到 BonMeshTool 目录.')
-        except subprocess.CalledProcessError:
-            print('执行 git pull 命令失败.')
+            subprocess.run(['git', '-C', full_path, 'pull'], check=True)
+            print("GitHub更新成功")
+        except subprocess.CalledProcessError as e:
+            print("GitHub更新失败:", e)
 
     ''' 默认占位的保存窗口设置函数'''
     def saveWindowSettings(self):
