@@ -575,40 +575,53 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cmds.warning('Import OBJ complete!')
         else:
             cmds.error('Import Object Type Error!')
+    ''' 默认占位的保存窗口设置函数'''
 
     def updateBonMeshTool(self):
         # 获取Maya用户自定义脚本目录
         script_directory = cmds.internalVar(userScriptDir=True)
+        print(f"脚本目录: {script_directory}")
         
         # 拼接完整路径
         full_path = os.path.join(script_directory, 'BonMeshTool')
+        print(f"完整路径: {full_path}")
+        
+        # 初始化消息内容
+        message = ""
         
         # 检查BonMeshTool文件夹是否存在
         if not os.path.exists(full_path):
-            cmds.inViewMessage(amg='BonMeshTool 文件夹不存在，请自行检查', pos='midCenter', fade=True)
-            return  # 如果文件夹不存在，返回，终止后续操作
+            print("BonMeshTool 文件夹不存在")
+            message = 'BonMeshTool 文件夹不存在，请自行检查'
+        else:
+            # 执行git pull命令
+            try:
+                print("执行 git pull 命令")
+                result = subprocess.run(
+                    ['git', '-C', full_path, 'pull'],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
         
-        # 执行git pull命令
-        try:
-            result = subprocess.run(
-                ['git', '-C', full_path, 'pull'],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+                print(f"git pull 输出: {result.stdout}")
+                print(f"git pull 错误: {result.stderr}")
+                
+                # 检查输出结果
+                if "Already up to date." in result.stdout:
+                    print("已经是最新的版本")
+                    message = '已经是最新的版本'
+                else:
+                    print("更新成功")
+                    message = '更新成功'
+            
+            except subprocess.CalledProcessError as e:
+                print(f"更新失败: {e.stderr}")
+                message = '更新失败'
     
-            # 检查输出结果
-            if "Already up to date." in result.stdout:
-                cmds.inViewMessage(amg='已经是最新的版本', pos='midCenter', fade=True)
-            else:
-                cmds.inViewMessage(amg='更新成功', pos='midCenter', fade=True)
-            print(result.stdout)
-        
-        except subprocess.CalledProcessError as e:
-            cmds.inViewMessage(amg='更新失败', pos='midCenter', fade=True)
-            print(e.stderr)
-
+        # 使用QTimer来延迟显示消息
+        QTimer.singleShot(100, lambda: cmds.inViewMessage(amg=message, pos='midCenter', fade=True))
 
     ''' 默认占位的保存窗口设置函数'''
     def saveWindowSettings(self):
