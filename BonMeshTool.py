@@ -10,7 +10,7 @@
 ## 更新时间 : 2024/07/02-版本01
 ## 添加功能 : 间隔选择工具添加Loop功能
 ## 更新时间 : 2024/07/02-版本02
-## 添加功能 : 窗口底部添加添加自动更新和保存窗口（占位）按钮aaa
+## 添加功能 : 窗口底部添加添加自动更新和保存窗口（占位）按钮
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -36,7 +36,8 @@ class CollapsibleSection(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
 
         self.toggle_button = QToolButton(text=title, checkable=True, checked=True)
-        self.toggle_button.setStyleSheet("QToolButton { border: none; }")
+        self.toggle_button.setStyleSheet("QToolButton { border: none; padding-top: 3px; padding-bottom: 3px; color: #bbbbbb; font-weight: bold; background-color: #3c3c3c; font-size: 18px;}")
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setArrowType(Qt.DownArrow)
         self.toggle_button.clicked.connect(self.toggle)
@@ -52,7 +53,6 @@ class CollapsibleSection(QWidget):
         self.layout().addWidget(self.content_area)
         self.content_area.setVisible(self.toggle_button.isChecked())
         self.toggle_animation = QPropertyAnimation(self.content_area, b"maximumHeight")
-
     def toggle(self):
         self.toggle_button.setArrowType(Qt.DownArrow if not self.toggle_button.isChecked() else Qt.RightArrow)
         if self.content_area.isVisible():
