@@ -7,10 +7,10 @@
 ##E-mail   : taoyangfan@qq.com
 ## 更新时间 : 2024/06/27
 ## 添加功能 : 存储所选边、选择存储边。优化快速选择工具、选择存储边残留选择状态的bug
-## 更新时间 : 2024/07/02
+## 更新时间 : 2024/07/02-版本01
 ## 添加功能 : 间隔选择工具添加Loop功能
-## 更新时间 : 2024/07/03
-## 添加功能 : 按照系统自带的Modeling Toolkit的颜色标准修改UI
+## 更新时间 : 2024/07/02-版本02
+## 添加功能 : 窗口底部添加添加自动更新和保存窗口（占位）按钮
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -36,8 +36,7 @@ class CollapsibleSection(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
 
         self.toggle_button = QToolButton(text=title, checkable=True, checked=True)
-        self.toggle_button.setStyleSheet("QToolButton { border: none; padding-top: 3px; padding-bottom: 3px; color: #bbbbbb; font-weight: bold; background-color: #3c3c3c; font-size: 18px;}")
-        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toggle_button.setStyleSheet("QToolButton { border: none; }")
         self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setArrowType(Qt.DownArrow)
         self.toggle_button.clicked.connect(self.toggle)
@@ -315,7 +314,23 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # Update the layout to include the new section
         self.layout().addWidget(Bridge_section)
 
+        '''↓↓↓↓↓↓↓↓↓自动更新部分UI↓↓↓↓↓↓↓↓↓'''
+        # 添加一个扩展项来推动按钮到底部
+        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.layout().addItem(spacer)
 
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        self.update_button = QPushButton('更新')
+        self.save_settings_button = QPushButton('保存窗口设置')
+        button_layout.addWidget(self.update_button)
+        button_layout.addWidget(self.save_settings_button)
+        self.layout().addLayout(button_layout)
+
+        # 按钮连接功能
+        self.update_button.clicked.connect(self.updateBonMeshTool)
+        self.save_settings_button.clicked.connect(self.saveWindowSettings)
+        '''↑↑↑↑↑↑↑↑↑↑自动更新部分UI↑↑↑↑↑↑↑↑↑↑'''  
 
     def RenameUVSetCmd(self, *args):
         selected_objects = cmds.ls(type='mesh')
@@ -562,6 +577,28 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cmds.warning('Import OBJ complete!')
         else:
             cmds.error('Import Object Type Error!')
+
+    def updateBonMeshTool():
+        # 获取当前脚本所在的目录
+        script_directory = os.path.dirname(__file__)
+    
+        # 获取 BonMeshTool 的根目录
+        bon_mesh_tool_dir = os.path.abspath(os.path.join(script_directory, '..', 'BonMeshTool'))
+    
+        # 切换到 BonMeshTool 目录并执行 git pull 命令
+        try:
+            os.chdir(bon_mesh_tool_dir)
+            subprocess.run(['git', 'pull'])
+            print('BonMeshTool 更新成功.')
+        except FileNotFoundError:
+            print('找不到 BonMeshTool 目录.')
+        except subprocess.CalledProcessError:
+            print('执行 git pull 命令失败.')
+
+    ''' 默认占位的保存窗口设置函数'''
+    def saveWindowSettings(self):
+        print("保存窗口设置功能尚未实现")
+    ''' 默认占位的保存窗口设置函数'''
             
     def restore_window_settings(self):
         # 窗口大小
