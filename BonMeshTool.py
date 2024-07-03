@@ -317,23 +317,19 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # Update the layout to include the new section
         self.layout().addWidget(Bridge_section)
 
-        '''↓↓↓↓↓↓↓↓↓自动更新部分UI↓↓↓↓↓↓↓↓↓'''
         # 添加一个扩展项来推动按钮到底部
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.layout().addItem(spacer)
-
         # 按钮布局
         button_layout = QHBoxLayout()
-        self.update_button = QPushButton('更新')
+        self.update_button = QPushButton('自动更新')
         self.save_settings_button = QPushButton('保存窗口设置')
         button_layout.addWidget(self.update_button)
         button_layout.addWidget(self.save_settings_button)
         self.layout().addLayout(button_layout)
-
         # 按钮连接功能
         self.update_button.clicked.connect(self.updateBonMeshTool)
         self.save_settings_button.clicked.connect(self.saveWindowSettings)
-        '''↑↑↑↑↑↑↑↑↑↑自动更新部分UI↑↑↑↑↑↑↑↑↑↑'''  
 
     def RenameUVSetCmd(self, *args):
         selected_objects = cmds.ls(type='mesh')
@@ -348,7 +344,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cuvname = cmds.getAttr(f"{each_element}.uvSet[0].uvSetName")
             if cuvname != desired_name:
                 cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
-        #cmds.warning("重命名UV集为：", desired_name)
         cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
 
     def DisplayTriangle(self, *args):
@@ -588,19 +583,32 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # 拼接完整路径
         full_path = os.path.join(script_directory, 'BonMeshTool')
         
-        # 打印完整路径
-        print("完整路径:", full_path)
-        
-        # 创建BonMeshTool文件夹（如果不存在）
+        # 检查BonMeshTool文件夹是否存在
         if not os.path.exists(full_path):
-            os.makedirs(full_path)
+            cmds.inViewMessage(amg='BonMeshTool 文件夹不存在，请自行检查', pos='midCenter', fade=True)
+            return  # 如果文件夹不存在，返回，终止后续操作
         
         # 执行git pull命令
         try:
-            subprocess.run(['git', '-C', full_path, 'pull'], check=True)
-            print("GitHub更新成功")
+            result = subprocess.run(
+                ['git', '-C', full_path, 'pull'],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+    
+            # 检查输出结果
+            if "Already up to date." in result.stdout:
+                cmds.inViewMessage(amg='已经是最新的版本', pos='midCenter', fade=True)
+            else:
+                cmds.inViewMessage(amg='更新成功', pos='midCenter', fade=True)
+            print(result.stdout)
+        
         except subprocess.CalledProcessError as e:
-            print("GitHub更新失败:", e)
+            cmds.inViewMessage(amg='更新失败', pos='midCenter', fade=True)
+            print(e.stderr)
+
 
     ''' 默认占位的保存窗口设置函数'''
     def saveWindowSettings(self):
