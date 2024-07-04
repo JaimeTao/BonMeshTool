@@ -575,7 +575,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cmds.warning('Import OBJ complete!')
         else:
             cmds.error('Import Object Type Error!')
-    ''' 默认占位的保存窗口设置函数'''
 
     def updateBonMeshTool(self):
         # 获取Maya用户自定义脚本目录
@@ -623,7 +622,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # 使用QTimer来延迟显示消息
         QTimer.singleShot(100, lambda: cmds.inViewMessage(amg=message, pos='midCenter', fade=True))
 
-    ''' 默认占位的保存窗口设置函数'''
     def saveWindowSettings(self):
         message = '<font color="#FFFF00"><b>别急！</b></font>该有的总会有的！这个功能暂时没有实现。<font color="#FF69B4">🏖️🥼🥻🥾🎧️🛋️<i>好好做模型，加油哦！</i></font>'
         cmds.inViewMessage(amg=message, pos='midCenter', fade=True)
