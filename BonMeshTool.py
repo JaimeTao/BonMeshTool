@@ -625,7 +625,8 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
     ''' 默认占位的保存窗口设置函数'''
     def saveWindowSettings(self):
-        print("保存窗口设置功能尚未实现")
+        message = '<font color="#FFFF00"><b>别急！</b></font>该有的总会有的！这个功能暂时没有实现。<font color="#FF69B4">🏖️🥼🥻🥾🎧️🛋️<i>好好做模型，加油哦！</i></font>'
+        cmds.inViewMessage(amg=message, pos='midCenter', fade=True)
     ''' 默认占位的保存窗口设置函数'''
             
     def restore_window_settings(self):
