@@ -13,6 +13,8 @@
 ## 添加功能 : 窗口底部添加添加自动更新和保存窗口（占位）按钮
 ## 更新时间 : 2024/07/02-版本03
 ## 添加功能 : 添加git pull更新功能
+## 更新时间 : 2024/07/05-版本01
+## 添加功能 : 折叠窗口字体从像素改为百分比
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -39,7 +41,7 @@ class CollapsibleSection(QWidget):
         self.layout().setContentsMargins(0, 0, 0, 0)
 
         self.toggle_button = QToolButton(text=title, checkable=True, checked=True)
-        self.toggle_button.setStyleSheet("QToolButton { border: none; padding-top: 3px; padding-bottom: 3px; color: #bbbbbb; font-weight: bold; background-color: #3c3c3c; font-size: 18px;}")
+        self.toggle_button.setStyleSheet("QToolButton { border: none; padding-top: 0.2em; padding-bottom: 0.2em; color: #bbbbbb; font-weight: bold; background-color: #3c3c3c; font-size: 1.1em;}")
         self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toggle_button.setArrowType(Qt.DownArrow)
