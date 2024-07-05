@@ -15,6 +15,8 @@
 ## 添加功能 : 添加git pull更新功能
 ## 更新时间 : 2024/07/05-版本01
 ## 添加功能 : 折叠窗口字体从像素改为百分比
+## 更新时间 : 2024/07/05-版本02
+## 添加功能 : 优化脚本
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -23,14 +25,6 @@ import maya.cmds as cmds
 import maya.mel as mel
 import subprocess
 import os
-
-def save_settings(key_name, value):
-    cmds.optionVar(stringValue=(key_name, str(value)))
-
-def load_settings(key_name, default_value=''):
-    if cmds.optionVar(exists=key_name):
-        return cmds.optionVar(query=key_name)
-    return default_value
 
 class CollapsibleSection(QWidget):
     def __init__(self, title="", parent=None):
@@ -58,6 +52,7 @@ class CollapsibleSection(QWidget):
         self.layout().addWidget(self.content_area)
         self.content_area.setVisible(self.toggle_button.isChecked())
         self.toggle_animation = QPropertyAnimation(self.content_area, b"maximumHeight")
+
     def toggle(self):
         self.toggle_button.setArrowType(Qt.DownArrow if not self.toggle_button.isChecked() else Qt.RightArrow)
         if self.content_area.isVisible():
@@ -81,228 +76,167 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         super(BonMeshToolUI, self).__init__(parent)
         self.setWindowTitle('BonMeshTool')
         self.window_name = 'BonMeshToolUI'
-        # 加载窗口设置
-        self.restore_window_settings()
         self.setLayout(QVBoxLayout())
         self.layout().setAlignment(Qt.AlignTop)
         self.setup_dirs()
         
         self.setMinimumWidth(250)
-        self.setMinimumHeight(400)
-        self.setLayout(QVBoxLayout())
-        self.layout().setAlignment(Qt.AlignTop)
-        self.setup_dirs()
+        self.setMinimumHeight(1200)
 
         # Section for UV renaming
         uv_section = CollapsibleSection("重命名并删除多余UV集！")
-        rename_widget = QWidget()  # 创建一个新的QWidget
-        rename_layout = QHBoxLayout()  # 创建水平布局
+        rename_widget = QWidget()
+        rename_layout = QHBoxLayout()
         self.rename_button = QPushButton('重命名')
         self.rename_line_edit = QLineEdit('map1')
         rename_layout.addWidget(self.rename_button)
         rename_layout.addWidget(self.rename_line_edit)
-        rename_widget.setLayout(rename_layout)  # 将布局设置到QWidget上
-        uv_section.addWidget(rename_widget)  # 添加QWidget到CollapsibleSection
+        rename_widget.setLayout(rename_layout)
+        uv_section.addWidget(rename_widget)
         self.layout().addWidget(uv_section)
-        self.rename_button.clicked.connect(self.RenameUVSetCmd)# 匹配按钮
+        self.rename_button.clicked.connect(self.RenameUVSetCmd)
 
         # Section for triangle operation
         triangle_section = CollapsibleSection("修改三角形分割方式")
-        # 添加显示三角分割的复选框
         self.display_triangle_checkbox = QCheckBox('显示三角分割')
         triangle_section.addWidget(self.display_triangle_checkbox)
-        self.display_triangle_checkbox.stateChanged.connect(self.DisplayTriangle)# 匹配按钮
-        # 创建第一行的QWidget和布局
+        self.display_triangle_checkbox.stateChanged.connect(self.DisplayTriangle)
+        
         triangle_row1_widget = QWidget()
         triangle_row1_layout = QHBoxLayout()
-        # 创建按钮
         maya_button = QPushButton('切换到maya三角分割')
         unity_button = QPushButton('切换到unity三角分割')
-        maya_button.clicked.connect(self.mayaTriangleCmd)# 匹配按钮
-        unity_button.clicked.connect(self.unityTriangleCmd)# 匹配按钮
-        # 设置按钮高度是默认的两倍
+        maya_button.clicked.connect(self.mayaTriangleCmd)
+        unity_button.clicked.connect(self.unityTriangleCmd)
         maya_button.setMinimumHeight(maya_button.sizeHint().height() * 2)
         unity_button.setMinimumHeight(unity_button.sizeHint().height() * 2)
-        # 将按钮添加到布局
         triangle_row1_layout.addWidget(maya_button)
         triangle_row1_layout.addWidget(unity_button)
-        # 设置布局到QWidget
         triangle_row1_widget.setLayout(triangle_row1_layout)
-        # 添加到CollapsibleSection
         triangle_section.addWidget(triangle_row1_widget)
 
-        # 创建第二行的QWidget和布局
         triangle_row2_widget = QWidget()
         triangle_row2_layout = QHBoxLayout()
-        # 创建按钮
         unlock_button = QPushButton('解锁法线')
         soft_button = QPushButton('软边')
         hard_button = QPushButton('硬边')
-        # 将按钮添加到布局
         triangle_row2_layout.addWidget(unlock_button)
         triangle_row2_layout.addWidget(soft_button)
         triangle_row2_layout.addWidget(hard_button)
-        unlock_button.clicked.connect(self.UnlockNormalCmd)# 匹配按钮
-        soft_button.clicked.connect(self.SoftenEdgeCmd)# 匹配按钮
-        hard_button.clicked.connect(self.HardenEdgeCmd)# 匹配按钮
-        # 设置布局到QWidget
+        unlock_button.clicked.connect(self.UnlockNormalCmd)
+        soft_button.clicked.connect(self.SoftenEdgeCmd)
+        hard_button.clicked.connect(self.HardenEdgeCmd)
         triangle_row2_widget.setLayout(triangle_row2_layout)
-        # 添加到CollapsibleSection
         triangle_section.addWidget(triangle_row2_widget)
-        # 将整个CollapsibleSection添加到主布局
         self.layout().addWidget(triangle_section)
+
         # Section for quick selection tools
         selection_section = CollapsibleSection("快速选择工具")
-        selection_widget = QWidget()  # 创建一个新的QWidget
-        selection_layout = QVBoxLayout()  # 创建垂直布局，用于将按钮分成两行
-        # 第一行布局，包含“选择UV边界”和“选择硬边”按钮
+        selection_widget = QWidget()
+        selection_layout = QVBoxLayout()
+        
         first_row_layout = QHBoxLayout()
         select_uv_edges_button = QPushButton('选择UV边界')
         select_hard_edges_button = QPushButton('选择硬边')
         first_row_layout.addWidget(select_uv_edges_button)
         first_row_layout.addWidget(select_hard_edges_button)
-        # 第二行布局，包含“存储选择边”和“选择存储边”按钮
+        
         second_row_layout = QHBoxLayout()
         store_edges_button = QPushButton('存储选择边')
         select_stored_edges_button = QPushButton('选择存储边')
         second_row_layout.addWidget(store_edges_button)
         second_row_layout.addWidget(select_stored_edges_button)
-        # 将两个行布局添加到主垂直布局
+        
         selection_layout.addLayout(first_row_layout)
         selection_layout.addLayout(second_row_layout)
-        # 将布局设置到QWidget上
         selection_widget.setLayout(selection_layout)
-        selection_section.addWidget(selection_widget)  # 添加QWidget到CollapsibleSection
+        selection_section.addWidget(selection_widget)
         self.layout().addWidget(selection_section)
-        # 绑定按钮到函数
-        select_uv_edges_button.clicked.connect(self.SelUVBrodenEdgeCmd)  # 绑定选择UV边界按钮到函数
-        select_hard_edges_button.clicked.connect(self.SelHardenEdgeCmd)  # 绑定选择硬边按钮到函数
-        store_edges_button.clicked.connect(self.store_selected_edges)  # 绑定存储选择边按钮到函数
-        select_stored_edges_button.clicked.connect(self.select_stored_edges)  # 绑定选择存储边按钮到函数
+        
+        select_uv_edges_button.clicked.connect(self.SelUVBrodenEdgeCmd)
+        select_hard_edges_button.clicked.connect(self.SelHardenEdgeCmd)
+        store_edges_button.clicked.connect(self.store_selected_edges)
+        select_stored_edges_button.clicked.connect(self.select_stored_edges)
+
         # Section for transferring attributes
         transfer_section = CollapsibleSection("传递属性工具")
-        transfer_widget = QWidget()  # 创建一个新的QWidget
-        transfer_layout = QHBoxLayout()  # 创建水平布局
-        # 创建按钮并连接到对应的函数
+        transfer_widget = QWidget()
+        transfer_layout = QHBoxLayout()
         transfer_pos_to_uv_button = QPushButton('位置toUV')
         transfer_uv_to_pos_button = QPushButton('UVto位置')
         transfer_pos_to_border_button = QPushButton('边界to边界')
-        # 连接按钮到函数
         transfer_pos_to_uv_button.clicked.connect(self.TranPositoUVCmd)
         transfer_uv_to_pos_button.clicked.connect(self.TranUVtoPosiCmd)
         transfer_pos_to_border_button.clicked.connect(self.TranPositoBordenECmd)
-        # 将按钮添加到布局
         transfer_layout.addWidget(transfer_pos_to_uv_button)
         transfer_layout.addWidget(transfer_uv_to_pos_button)
         transfer_layout.addWidget(transfer_pos_to_border_button)
-
-        '''快速选择部分'''
-        # 设置布局到QWidget
         transfer_widget.setLayout(transfer_layout)
-
-        # 添加QWidget到CollapsibleSection
         transfer_section.addWidget(transfer_widget)
-
-        # 将transfer_section添加到主布局
         self.layout().addWidget(transfer_section)
 
         # Section for interval selection tools
         interval_section = CollapsibleSection("间隔选择工具")
-
-        # 为滑动条和值标签创建一个独立的QWidget
         slider_widget = QWidget()
-        slider_layout = QVBoxLayout()  # 使用垂直布局来放置多个水平布局
+        slider_layout = QVBoxLayout()
 
-        # 间隔数量滑动条的布局
-        interval_slider_layout = QHBoxLayout()  # 使用水平布局来放置标签和滑动条
-
-        # 创建显示间隔数量滑动条值的标签，并设置初始文本
-        self.Ring_value_label = QLabel("Ring间隔数: %d" % 1)  # 假设初始值为1
-
-        # 创建和配置间隔数量滑动条
+        interval_slider_layout = QHBoxLayout()
+        self.Ring_value_label = QLabel("Ring间隔数: %d" % 1)
         self.slider = QSlider(Qt.Horizontal)
-        self.slider.setMinimum(0)  # 设置滑动条的最小值
-        self.slider.setMaximum(20)  # 设置滑动条的最大值
-        self.slider.setValue(1)  # 设置滑动条的初始值
-
-        # 将标签和滑动条添加到水平布局中，标签在前
+        self.slider.setMinimum(0)
+        self.slider.setMaximum(20)
+        self.slider.setValue(1)
         interval_slider_layout.addWidget(self.Ring_value_label)
         interval_slider_layout.addWidget(self.slider)
-
-        # 连接滑动条的信号到一个槽函数以更新标签
         self.slider.valueChanged.connect(self.Ring_slider_value_changed)
-
-        # 将间隔数量滑动条的布局添加到主滑动条布局
         slider_layout.addLayout(interval_slider_layout)
 
-        # Loop滑动条的布局
-        loop_slider_layout = QHBoxLayout()  # 使用水平布局来放置标签和滑动条
-
-        # 创建显示loop滑动条值的标签，并设置初始文本
-        self.loop_value_label = QLabel("loop间隔数: %d" % 0)  # 假设初始值为0
-
-        # 创建和配置loop滑动条
+        loop_slider_layout = QHBoxLayout()
+        self.loop_value_label = QLabel("loop间隔数: %d" % 0)
         self.loop_slider = QSlider(Qt.Horizontal)
-        self.loop_slider.setMinimum(0)  # 设置滑动条的最小值
-        self.loop_slider.setMaximum(20)  # 设置滑动条的最大值
-        self.loop_slider.setValue(0)  # 设置滑动条的初始值
-
-        # 将标签和滑动条添加到水平布局中，标签在前
+        self.loop_slider.setMinimum(0)
+        self.loop_slider.setMaximum(20)
+        self.loop_slider.setValue(0)
         loop_slider_layout.addWidget(self.loop_value_label)
         loop_slider_layout.addWidget(self.loop_slider)
-
-        # 连接loop滑动条的信号到一个槽函数以更新标签
         self.loop_slider.valueChanged.connect(self.loop_slider_value_changed)
-
-        # 将loop滑动条的布局添加到主滑动条布局
         slider_layout.addLayout(loop_slider_layout)
 
-        # 设置滑动条布局到QWidget
         slider_widget.setLayout(slider_layout)
-
-        # 创建和配置按钮的布局
         button_widget = QWidget()
         button_layout = QHBoxLayout()
         to_rings_button = QPushButton('间隔选择')
         Extend_to_Ring_button = QPushButton('Ring延伸')
         Extend_to_Loops_button = QPushButton('Loop延伸')
-
         button_layout.addWidget(to_rings_button)
         button_layout.addWidget(Extend_to_Ring_button)
         button_layout.addWidget(Extend_to_Loops_button)
-
         button_widget.setLayout(button_layout)
-
-        # 连接按钮到函数
         to_rings_button.clicked.connect(self.ToRingsCmd)
         Extend_to_Ring_button.clicked.connect(self.Extend_to_RingCmd)
         Extend_to_Loops_button.clicked.connect(self.Extend_to_LoopCmd)
         
-        # 将滑动条和按钮的Widget添加到间隔选择工具的section中
         interval_section.addWidget(slider_widget)
         interval_section.addWidget(button_widget)
-
-        # 将间隔选择工具的section添加到主布局
         self.layout().addWidget(interval_section)
-        '''快速选择部分'''
-        #Section for RizomUV Bridge
+
+        # Section for RizomUV Bridge
         Bridge_section = CollapsibleSection("RizomUV Bridge")
-        Bridge_Dir_widget = QWidget()  # 创建一个新的QWidget
-        Bridge_Dir_layout = QHBoxLayout()  # 创建水平布局
+        Bridge_Dir_widget = QWidget()
+        Bridge_Dir_layout = QHBoxLayout()
         Bridge_Dir_button = QPushButton('更新路径')
-        self.Bridge_Dir_line_edit = QLineEdit()  # 保存引用
+        self.Bridge_Dir_line_edit = QLineEdit()
         if cmds.optionVar(exists="RizomUVPath"):
             self.Bridge_Dir_line_edit.setText(cmds.optionVar(q="RizomUVPath"))
         else:
             self.Bridge_Dir_line_edit.setText(r'C:\Program Files\Rizom Lab\RizomUV 2023.0\rizomuv.exe')
         Bridge_Dir_layout.addWidget(Bridge_Dir_button)
         Bridge_Dir_layout.addWidget(self.Bridge_Dir_line_edit)
-        Bridge_Dir_widget.setLayout(Bridge_Dir_layout)  # 将布局设置到QWidget上
-        Bridge_section.addWidget(Bridge_Dir_widget)  # 添加QWidget到CollapsibleSection
+        Bridge_Dir_widget.setLayout(Bridge_Dir_layout)
+        Bridge_section.addWidget(Bridge_Dir_widget)
         self.layout().addWidget(Bridge_section)
         Bridge_Dir_button.clicked.connect(self.update_path)
 
-        # New section with three horizontally distributed buttons in a second row
         button_row_widget = QWidget()
         button_row_layout = QHBoxLayout()
         export_button = QPushButton('导出')
@@ -312,16 +246,16 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         button_row_layout.addWidget(import_button)
         button_row_layout.addWidget(launch_button)
         button_row_widget.setLayout(button_row_layout)
-        Bridge_section.addWidget(button_row_widget)  # 添加到同一个CollapsibleSection
+        Bridge_section.addWidget(button_row_widget)
         export_button.clicked.connect(self.export_obj)
         import_button.clicked.connect(self.import_obj)
         launch_button.clicked.connect(self.launch_rizom)
-        # Update the layout to include the new section
         self.layout().addWidget(Bridge_section)
 
         # 添加一个扩展项来推动按钮到底部
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.layout().addItem(spacer)
+
         # 按钮布局
         button_layout = QHBoxLayout()
         self.update_button = QPushButton('自动更新')
@@ -329,6 +263,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         button_layout.addWidget(self.update_button)
         button_layout.addWidget(self.save_settings_button)
         self.layout().addLayout(button_layout)
+
         # 按钮连接功能
         self.update_button.clicked.connect(self.updateBonMeshTool)
         self.save_settings_button.clicked.connect(self.saveWindowSettings)
@@ -483,7 +418,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         current_value = self.slider.value()
         print("Current slider value:", current_value)
         return current_value
-##11
+        
     def get_current_loop_slider_value(self):
         current_value = self.loop_slider.value()
         print("Current loop slider value:", current_value)
@@ -524,7 +459,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def Extend_to_LoopCmd(self):
         mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
         
-###
     def update_path(self):
         new_path = self.Bridge_Dir_line_edit.text()
         cmds.optionVar(sv=("RizomUVPath", new_path))
@@ -627,28 +561,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def saveWindowSettings(self):
         message = '<font color="#FFFF00"><b>别急！</b></font>该有的总会有的！这个功能暂时没有实现。<font color="#FF69B4">🏖️🥼🥻🥾🎧️🛋️<i>好好做模型，加油哦！</i></font>'
         cmds.inViewMessage(amg=message, pos='midCenter', fade=True)
-    ''' 默认占位的保存窗口设置函数'''
-            
-    def restore_window_settings(self):
-        # 窗口大小
-        width = int(load_settings(self.window_name + '_width', 250))
-        height = int(load_settings(self.window_name + '_height', 400))
-        self.resize(width, height)
-            
-    def save_window_settings(self):
-        # 保存窗口大小
-        width = self.width()
-        height = self.height()
-        save_settings(self.window_name + '_width', width)
-        save_settings(self.window_name + '_height', height)
-        
-        # 保存窗口位置
-        pos = self.pos()
-        save_settings(self.window_name + '_position', '{},{}'.format(pos.x(), pos.y()))
-
-    def closeEvent(self, event):
-        self.save_window_settings()
-        super(BonMeshToolUI, self).closeEvent(event)
 
 ###
 def show_bon_mesh_tool_ui():
