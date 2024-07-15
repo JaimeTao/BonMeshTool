@@ -17,6 +17,8 @@
 ## 添加功能 : 折叠窗口字体从像素改为百分比
 ## 更新时间 : 2024/07/05-版本02
 ## 添加功能 : 优化脚本
+## 更新时间 : 2024/07/05-版本01
+## 添加功能 : 把间隔选择改为交互式实时预览
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -71,17 +73,24 @@ class CollapsibleSection(QWidget):
     def addWidget(self, widget):
         self.content_area.layout().addWidget(widget)
 
+
 class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def __init__(self, parent=None):
         super(BonMeshToolUI, self).__init__(parent)
-        self.setWindowTitle('BonMeshTool')
         self.window_name = 'BonMeshToolUI'
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle('BonMeshTool')
         self.setLayout(QVBoxLayout())
         self.layout().setAlignment(Qt.AlignTop)
         self.setup_dirs()
         
         self.setMinimumWidth(250)
-        self.setMinimumHeight(1200)
+        self.setMinimumHeight(400)
+
+        # Restore window settings if they exist
+        self.restore_window_settings()
 
         # Section for UV renaming
         uv_section = CollapsibleSection("重命名并删除多余UV集！")
@@ -266,7 +275,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
         # 按钮连接功能
         self.update_button.clicked.connect(self.updateBonMeshTool)
-        self.save_settings_button.clicked.connect(self.saveWindowSettings)
+        self.save_settings_button.clicked.connect(self.save_window_settings)
 
     def RenameUVSetCmd(self, *args):
         selected_objects = cmds.ls(type='mesh')
@@ -410,9 +419,11 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
     def Ring_slider_value_changed(self, value):
         self.Ring_value_label.setText("Ring间隔数: %d" % value)
+        self.preview_selection()
 
     def loop_slider_value_changed(self, value):
         self.loop_value_label.setText("loop间隔数: %d" % value)
+        self.preview_selection()
 
     def get_current_Ring_slider_value(self):
         current_value = self.slider.value()
@@ -433,7 +444,27 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         print("Selected edge count:", edge_count)
         return edge_count
 
+    def store_selected_edges(self):
+        self.selected_edges = cmds.ls(selection=True, flatten=True)
+        print("Stored selected edges:", self.selected_edges)
+
     def ToRingsCmd(self):
+        self.store_selected_edges()
+        self.preview_selection()
+        
+    def Extend_to_RingCmd(self):
+        mel.eval('polySelectEdgesEveryN("edgeRing", 1)')
+        
+    def Extend_to_LoopCmd(self):
+        mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
+
+    def preview_selection(self):
+        if not self.selected_edges:
+            return
+
+        cmds.select(clear=True)
+        cmds.select(self.selected_edges)
+
         edge_count = self.get_selected_edge_count()
         current_Ring_value = self.get_current_Ring_slider_value()
         current_Loop_value = self.get_current_loop_slider_value()
@@ -452,12 +483,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             x = -1
         print("Computed Loop value (x):", x)
         mel.eval('polySelectEdgesEveryN("edgeLoop", {0})'.format(x))
-            
-    def Extend_to_RingCmd(self):
-        mel.eval('polySelectEdgesEveryN("edgeRing", 1)')
-        
-    def Extend_to_LoopCmd(self):
-        mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
         
     def update_path(self):
         new_path = self.Bridge_Dir_line_edit.text()
@@ -557,11 +582,36 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     
         # 使用QTimer来延迟显示消息
         QTimer.singleShot(100, lambda: cmds.inViewMessage(amg=message, pos='midCenter', fade=True))
+        
+    def restore_window_settings(self):
+        if cmds.optionVar(exists='BonMeshToolUI_width') and cmds.optionVar(exists='BonMeshToolUI_height'):
+            self.resize(cmds.optionVar(q='BonMeshToolUI_width'), cmds.optionVar(q='BonMeshToolUI_height'))
+        if cmds.optionVar(exists='BonMeshToolUI_position'):
+            position = cmds.optionVar(q='BonMeshToolUI_position').split(',')
+            self.move(int(position[0]), int(position[1]))
 
-    def saveWindowSettings(self):
-        message = '<font color="#FFFF00"><b>别急！</b></font>该有的总会有的！这个功能暂时没有实现。<font color="#FF69B4">🏖️🥼🥻🥾🎧️🛋️<i>好好做模型，加油哦！</i></font>'
+    def save_window_settings(self):
+        cmds.optionVar(intValue=('BonMeshToolUI_width', self.width()))
+        cmds.optionVar(intValue=('BonMeshToolUI_height', self.height()))
+        position = '{},{}'.format(self.pos().x(), self.pos().y())
+        cmds.optionVar(stringValue=('BonMeshToolUI_position', position))
+        message = '<font color="#FFFF00"><b>保存成功！</b></font>窗口设置已保存。<font color="#FF69B4"><i>加油哦！</i></font>'
         cmds.inViewMessage(amg=message, pos='midCenter', fade=True)
 
+    def RenameUVSetCmd(self, *args):
+        selected_objects = cmds.ls(type='mesh')
+        desired_name = self.rename_line_edit.text()
+        for s_object in selected_objects:
+            uv_ids = cmds.polyUVSet(s_object, query=True, allUVSetsIndices=True)
+            for i in uv_ids:
+                if i != 0:
+                    cuvname = cmds.getAttr(f"{s_object}.uvSet[{i}].uvSetName")
+                    cmds.polyUVSet(s_object, delete=True, uvSet=cuvname)
+        for each_element in selected_objects:
+            cuvname = cmds.getAttr(f"{each_element}.uvSet[0].uvSetName")
+            if cuvname != desired_name:
+                cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
+        cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
 ###
 def show_bon_mesh_tool_ui():
     global bon_mesh_tool_ui
