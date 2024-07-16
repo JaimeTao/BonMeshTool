@@ -19,6 +19,8 @@
 ## 添加功能 : 优化脚本
 ## 更新时间 : 2024/07/05-版本01
 ## 添加功能 : 把间隔选择改为交互式实时预览
+## 更新时间 : 2024/07/16-版本01
+## 添加功能 : 修复存储边和读取存储边bug
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -290,6 +292,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cuvname = cmds.getAttr(f"{each_element}.uvSet[0].uvSetName")
             if cuvname != desired_name:
                 cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
+        #cmds.warning("重命名UV集为：", desired_name)
         cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
 
     def DisplayTriangle(self, *args):
