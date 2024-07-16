@@ -166,8 +166,8 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         
         select_uv_edges_button.clicked.connect(self.SelUVBrodenEdgeCmd)
         select_hard_edges_button.clicked.connect(self.SelHardenEdgeCmd)
-        store_edges_button.clicked.connect(self.store_selected_edges)
-        select_stored_edges_button.clicked.connect(self.select_stored_edges)
+        store_edges_button.clicked.connect(self.store_edges)
+        select_stored_edges_button.clicked.connect(self.select_edges)
 
         # Section for transferring attributes
         transfer_section = CollapsibleSection("传递属性工具")
@@ -327,7 +327,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # 获取当前选择的对象并存储
         selection = cmds.ls(sl=True, l=True)
         if not selection:
-            cmds.inViewMessage(amg='没有选择任何对象!', pos='midCenter', fade=True)
             return None
 
         # 启用边选择掩码并清空当前选择
@@ -379,7 +378,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         cmds.polySelectConstraint(m=0)
 
     ##
-    def store_selected_edges(self, *args):        
+    def store_edges(self, *args):        
         global stored_edges
         selected_edges = cmds.ls(selection=True, flatten=True)
 
@@ -390,7 +389,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         stored_edges = selected_edges
         print(f"存储了 {len(stored_edges)} 条边。")
 
-    def select_stored_edges(self, *args):
+    def select_edges(self, *args):
 
 
         # 获取当前选择的对象并清空当前选择存储
