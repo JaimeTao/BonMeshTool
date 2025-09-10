@@ -31,6 +31,7 @@ import maya.cmds as cmds
 import maya.mel as mel
 import subprocess
 import os
+import re
 
 class CollapsibleSection(QWidget):
     def __init__(self, title="", parent=None):
@@ -568,19 +569,19 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
     def even_edge_loop_doit_run(self, smooth_type):
         """处理选中的边环组，执行均匀化操作"""
         # 获取当前选择的边
-        sel = mc.ls(selection=True, fl=1)
+        sel = cmds.ls(selection=True, fl=1)
         if not sel:
-            mc.warning("请先选择多边形的边")
+            cmds.warning("请先选择多边形的边")
             return
 
         # 保存原始形状节点
-        shape = mc.listRelatives(sel, parent=True)
+        shape = cmds.listRelatives(sel, parent=True)
         if not shape:
-            mc.warning("无法获取选择的形状节点")
+            cmds.warning("无法获取选择的形状节点")
             return
 
         # 临时调整显示平滑度
-        mc.displaySmoothness(
+        cmds.displaySmoothness(
             divisionsU=0,
             divisionsV=0,
             pointsWire=4,
@@ -591,25 +592,25 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # 获取边环组并处理
         edge_loop_groups = self.get_edge_ring_group(0, '')
         for group in edge_loop_groups:
-            mc.select(group)
+            cmds.select(group)
             self.even_edge_loop_doit(smooth_type)
 
         # 恢复初始选择状态
-        mc.select(sel)
+        cmds.select(sel)
         # 恢复边组件选择模式
         cmd = f'doMenuComponentSelection("{shape[0]}", "edge");'
         mel.eval(cmd)
-        mc.select(sel)
+        cmds.select(sel)
 
     def even_edge_loop_doit(self, smooth_type):
         """对单个边环执行均匀化处理"""
         # 清理临时曲线
         temp_curve = 'tempEvenCurve'
-        if mc.objExists(temp_curve):
-            mc.delete(temp_curve)
+        if cmds.objExists(temp_curve):
+            cmds.delete(temp_curve)
 
         # 获取当前选择的边
-        sel = mc.ls(selection=True, fl=1)
+        sel = cmds.ls(selection=True, fl=1)
         if not sel:
             return
 
@@ -617,24 +618,24 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         circle_state, vertex_list = self.vtx_loop_order_check()
         
         # 将边环转换为曲线
-        mc.polyToCurve(
+        cmds.polyToCurve(
             form=2,
             degree=1,
             conformToSmoothMeshPreview=1
         )
-        mc.rename(temp_curve)
-        curve_cvs = mc.ls(f'{temp_curve}.cv[*]', fl=1)
+        cmds.rename(temp_curve)
+        curve_cvs = cmds.ls(f'{temp_curve}.cv[*]', fl=1)
 
         # 校正顶点顺序
-        curve_pos = mc.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)
-        edge_pos = mc.xform(vertex_list[0], a=1, ws=1, q=1, t=1)
+        curve_pos = cmds.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)
+        edge_pos = cmds.xform(vertex_list[0], a=1, ws=1, q=1, t=1)
         if curve_pos != edge_pos:
             vertex_list = vertex_list[::-1]
 
         # 处理曲线（仅保留Average模式）
         if len(curve_cvs) > 2:
             # 重建曲线为线性
-            mc.rebuildCurve(
+            cmds.rebuildCurve(
                 temp_curve,
                 ch=1,
                 rpo=1,
@@ -651,25 +652,25 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             
             # 处理少量CV点的情况
             if len(curve_cvs) < 4:
-                mc.delete(f'{temp_curve}.cv[1]', f'{temp_curve}.cv[3]')
-                curve_cvs = mc.ls(f'{temp_curve}.cv[*]', fl=1)
+                cmds.delete(f'{temp_curve}.cv[1]', f'{temp_curve}.cv[3]')
+                curve_cvs = cmds.ls(f'{temp_curve}.cv[*]', fl=1)
 
             # 校验顶点顺序（处理浮点精度）
-            curve_pos = [round(p, 3) for p in mc.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)]
-            edge_pos = [round(p, 3) for p in mc.xform(vertex_list[0], a=1, ws=1, q=1, t=1)]
+            curve_pos = [round(p, 3) for p in cmds.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)]
+            edge_pos = [round(p, 3) for p in cmds.xform(vertex_list[0], a=1, ws=1, q=1, t=1)]
 
         # 应用曲线位置到顶点
-        mc.delete(temp_curve, ch=1)  # 删除历史
+        cmds.delete(temp_curve, ch=1)  # 删除历史
         for i in range(len(curve_cvs)):
-            pos = mc.xform(curve_cvs[i], a=1, ws=1, q=1, t=1)
-            mc.xform(vertex_list[i], a=1, ws=1, t=(pos[0], pos[1], pos[2]))
+            pos = cmds.xform(curve_cvs[i], a=1, ws=1, q=1, t=1)
+            cmds.xform(vertex_list[i], a=1, ws=1, t=(pos[0], pos[1], pos[2]))
         
         # 清理临时曲线
-        mc.delete(temp_curve)
+        cmds.delete(temp_curve)
 
     def get_edge_ring_group(self, list_sort, list_input):
         """获取并分组连续的边环"""
-        sel_edges = mc.ls(selection=True, fl=1)
+        sel_edges = cmds.ls(selection=True, fl=1)
         if not sel_edges:
             return []
 
@@ -678,7 +679,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         
         # 构建边-顶点映射字典
         e2v_dict = {}
-        e2v_infos = mc.polyInfo(sel_edges, ev=True)
+        e2v_infos = cmds.polyInfo(sel_edges, ev=True)
         for info in e2v_infos:
             ev_list = [int(i) for i in re.findall('\\d+', info)]
             e2v_dict[ev_list[0]] = ev_list[1:]
@@ -723,13 +724,13 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
     def vtx_loop_order_check(self):
         """检查并获取边环顶点的有序列表"""
-        sel_edges = mc.ls(selection=True, fl=1)
+        sel_edges = cmds.ls(selection=True, fl=1)
         if not sel_edges:
             return 0, []
 
         # 获取形状节点和变换节点
-        shape_node = mc.listRelatives(sel_edges[0], fullPath=True, parent=True)
-        transform_node = mc.listRelatives(shape_node[0], fullPath=True, parent=True)
+        shape_node = cmds.listRelatives(sel_edges[0], fullPath=True, parent=True)
+        transform_node = cmds.listRelatives(shape_node[0], fullPath=True, parent=True)
         if not transform_node:
             return 0, []
 
@@ -745,7 +746,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         # 提取顶点ID
         vertex_numbers = []
         for edge in sel_edges:
-            ev_list = mc.polyInfo(edge, ev=True)
+            ev_list = cmds.polyInfo(edge, ev=True)
             parts = (ev_list[0].split(':')[1].split('\n')[0]).split(' ')
             for part in parts:
                 number = ''.join([n for n in part.split('|')[-1] if n.isdigit()])
@@ -767,7 +768,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         while duplicates and count < 1000:
             # 获取当前顶点关联的边
             current_vtx = f"{transform_node[0]}.vtx[{vertex_order[-1]}]"
-            ve_list = mc.polyInfo(current_vtx, ve=True)
+            ve_list = cmds.polyInfo(current_vtx, ve=True)
             edge_nums = []
             parts = (ve_list[0].split(':')[1].split('\n')[0]).split(' ')
             for part in parts:
@@ -780,7 +781,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             edge_number_list.remove(next_edge)
 
             # 找到下一个顶点
-            edge_vtxs = mc.polyInfo(f"{transform_node[0]}.e[{next_edge}]", ev=True)
+            edge_vtxs = cmds.polyInfo(f"{transform_node[0]}.e[{next_edge}]", ev=True)
             vtx_nums = []
             parts = (edge_vtxs[0].split(':')[1].split('\n')[0]).split(' ')
             for part in parts:
