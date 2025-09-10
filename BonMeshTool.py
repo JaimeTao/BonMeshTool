@@ -21,6 +21,8 @@
 ## 添加功能 : 把间隔选择改为交互式实时预览
 ## 更新时间 : 2024/07/16-版本01
 ## 添加功能 : 修复存储边和读取存储边bug
+## 更新时间 : 2025/09/10-版本01
+## 添加功能 : 添加平均化边长功能
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -262,7 +264,30 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         import_button.clicked.connect(self.import_obj)
         launch_button.clicked.connect(self.launch_rizom)
         self.layout().addWidget(Bridge_section)
-
+###### 平均化边长UI######
+        # 平均化边长度模块 - 独立布局+正确事件绑定
+        average_section = CollapsibleSection("边长优化")
+        # 创建独立的布局容器（避免复用其他模块的transfer_layout导致错乱）
+        average_widget = QWidget()
+        average_layout = QHBoxLayout()  # 独立水平布局
+        average_widget.setLayout(average_layout)  # 给容器设置布局
+        
+        # 1. 创建平均边长按钮
+        self.average_edge_btn = QPushButton('平均边长')
+        # 设置按钮样式（与其他功能按钮视觉统一）
+        self.average_edge_btn.setMinimumHeight(30)  # 增加按钮高度，提升点击体验
+        # 2. 绑定按钮事件：直接触发平均化命令（固定传递"Average"模式参数）
+        self.average_edge_btn.clicked.connect(
+            lambda: self.even_edge_loop_doit_run("even")  # 传递smooth_type为"even"（对应Average模式）
+        )
+        
+        # 3. 将按钮添加到独立布局中
+        average_layout.addWidget(self.average_edge_btn)
+        # 4. 将布局容器添加到折叠面板
+        average_section.addWidget(average_widget)
+        # 5. 将整个平均化模块添加到主界面
+        self.layout().addWidget(average_section)
+### 平均化线段长度模块结束 ###
         # 添加一个扩展项来推动按钮到底部
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.layout().addItem(spacer)
@@ -538,7 +563,253 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cmds.warning('Import OBJ complete!')
         else:
             cmds.error('Import Object Type Error!')
+###平均化线段长度###
 
+    def even_edge_loop_doit_run(self, smooth_type):
+        """处理选中的边环组，执行均匀化操作"""
+        # 获取当前选择的边
+        sel = mc.ls(selection=True, fl=1)
+        if not sel:
+            mc.warning("请先选择多边形的边")
+            return
+
+        # 保存原始形状节点
+        shape = mc.listRelatives(sel, parent=True)
+        if not shape:
+            mc.warning("无法获取选择的形状节点")
+            return
+
+        # 临时调整显示平滑度
+        mc.displaySmoothness(
+            divisionsU=0,
+            divisionsV=0,
+            pointsWire=4,
+            pointsShaded=1,
+            polygonObject=1
+        )
+
+        # 获取边环组并处理
+        edge_loop_groups = self.get_edge_ring_group(0, '')
+        for group in edge_loop_groups:
+            mc.select(group)
+            self.even_edge_loop_doit(smooth_type)
+
+        # 恢复初始选择状态
+        mc.select(sel)
+        # 恢复边组件选择模式
+        cmd = f'doMenuComponentSelection("{shape[0]}", "edge");'
+        mel.eval(cmd)
+        mc.select(sel)
+
+    def even_edge_loop_doit(self, smooth_type):
+        """对单个边环执行均匀化处理"""
+        # 清理临时曲线
+        temp_curve = 'tempEvenCurve'
+        if mc.objExists(temp_curve):
+            mc.delete(temp_curve)
+
+        # 获取当前选择的边
+        sel = mc.ls(selection=True, fl=1)
+        if not sel:
+            return
+
+        # 检查边环顶点顺序
+        circle_state, vertex_list = self.vtx_loop_order_check()
+        
+        # 将边环转换为曲线
+        mc.polyToCurve(
+            form=2,
+            degree=1,
+            conformToSmoothMeshPreview=1
+        )
+        mc.rename(temp_curve)
+        curve_cvs = mc.ls(f'{temp_curve}.cv[*]', fl=1)
+
+        # 校正顶点顺序
+        curve_pos = mc.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)
+        edge_pos = mc.xform(vertex_list[0], a=1, ws=1, q=1, t=1)
+        if curve_pos != edge_pos:
+            vertex_list = vertex_list[::-1]
+
+        # 处理曲线（仅保留Average模式）
+        if len(curve_cvs) > 2:
+            # 重建曲线为线性
+            mc.rebuildCurve(
+                temp_curve,
+                ch=1,
+                rpo=1,
+                rt=0,
+                end=1,
+                kr=0,
+                kcp=0,
+                kep=1,
+                kt=0,
+                s=0,
+                d=1,
+                tol=0
+            )
+            
+            # 处理少量CV点的情况
+            if len(curve_cvs) < 4:
+                mc.delete(f'{temp_curve}.cv[1]', f'{temp_curve}.cv[3]')
+                curve_cvs = mc.ls(f'{temp_curve}.cv[*]', fl=1)
+
+            # 校验顶点顺序（处理浮点精度）
+            curve_pos = [round(p, 3) for p in mc.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)]
+            edge_pos = [round(p, 3) for p in mc.xform(vertex_list[0], a=1, ws=1, q=1, t=1)]
+
+        # 应用曲线位置到顶点
+        mc.delete(temp_curve, ch=1)  # 删除历史
+        for i in range(len(curve_cvs)):
+            pos = mc.xform(curve_cvs[i], a=1, ws=1, q=1, t=1)
+            mc.xform(vertex_list[i], a=1, ws=1, t=(pos[0], pos[1], pos[2]))
+        
+        # 清理临时曲线
+        mc.delete(temp_curve)
+
+    def get_edge_ring_group(self, list_sort, list_input):
+        """获取并分组连续的边环"""
+        sel_edges = mc.ls(selection=True, fl=1)
+        if not sel_edges:
+            return []
+
+        # 提取变换节点
+        trans = sel_edges[0].split(".")[0]
+        
+        # 构建边-顶点映射字典
+        e2v_dict = {}
+        e2v_infos = mc.polyInfo(sel_edges, ev=True)
+        for info in e2v_infos:
+            ev_list = [int(i) for i in re.findall('\\d+', info)]
+            e2v_dict[ev_list[0]] = ev_list[1:]
+
+        edge_groups = []
+        # 遍历边字典，聚合连续的边
+        while e2v_dict:
+            try:
+                start_edge, start_vtxs = e2v_dict.popitem()
+            except KeyError:
+                break
+
+            edges_grp = [start_edge]
+            num = 0
+            for vtx in start_vtxs:
+                current_vtx = vtx
+                while True:
+                    # 查找关联的边
+                    next_edges = [k for k in e2v_dict if current_vtx in e2v_dict[k]]
+                    if next_edges and len(next_edges) == 1:
+                        next_edge = next_edges[0]
+                        # 按方向插入边
+                        if num == 0:
+                            edges_grp.append(next_edge)
+                        else:
+                            edges_grp.insert(0, next_edge)
+                        
+                        # 更新当前顶点
+                        next_vtxs = e2v_dict[next_edge]
+                        current_vtx = [v for v in next_vtxs if v != current_vtx][0]
+                        e2v_dict.pop(next_edge)
+                    else:
+                        break
+                num += 1
+            edge_groups.append(edges_grp)
+
+        # 格式化边路径
+        return [
+            [f"{trans}.e[{str(edge)}]" for edge in group]
+            for group in edge_groups
+        ]
+
+    def vtx_loop_order_check(self):
+        """检查并获取边环顶点的有序列表"""
+        sel_edges = mc.ls(selection=True, fl=1)
+        if not sel_edges:
+            return 0, []
+
+        # 获取形状节点和变换节点
+        shape_node = mc.listRelatives(sel_edges[0], fullPath=True, parent=True)
+        transform_node = mc.listRelatives(shape_node[0], fullPath=True, parent=True)
+        if not transform_node:
+            return 0, []
+
+        # 提取边ID列表
+        edge_number_list = []
+        for edge in sel_edges:
+            parts = (edge.split('.')[1].split('\n')[0]).split(' ')
+            for part in parts:
+                number = ''.join([n for n in part.split('|')[-1] if n.isdigit()])
+                if number:
+                    edge_number_list.append(number)
+
+        # 提取顶点ID
+        vertex_numbers = []
+        for edge in sel_edges:
+            ev_list = mc.polyInfo(edge, ev=True)
+            parts = (ev_list[0].split(':')[1].split('\n')[0]).split(' ')
+            for part in parts:
+                number = ''.join([n for n in part.split('|')[-1] if n.isdigit()])
+                if number:
+                    vertex_numbers.append(number)
+
+        # 确定端点和闭合状态
+        duplicates = set([x for x in vertex_numbers if vertex_numbers.count(x) > 1])
+        endpoints = list(set(vertex_numbers) - duplicates)
+        circle_state = 0  # 0=开放, 1=闭合
+
+        if not endpoints:  # 闭合边环
+            circle_state = 1
+            endpoints.append(vertex_numbers[0])
+
+        # 构建顶点顺序
+        vertex_order = [endpoints[0]]
+        count = 0
+        while duplicates and count < 1000:
+            # 获取当前顶点关联的边
+            current_vtx = f"{transform_node[0]}.vtx[{vertex_order[-1]}]"
+            ve_list = mc.polyInfo(current_vtx, ve=True)
+            edge_nums = []
+            parts = (ve_list[0].split(':')[1].split('\n')[0]).split(' ')
+            for part in parts:
+                num = ''.join([n for n in part.split('|')[-1] if n.isdigit()])
+                if num:
+                    edge_nums.append(num)
+
+            # 找到下一条边
+            next_edge = [g for g in edge_nums if g in edge_number_list][0]
+            edge_number_list.remove(next_edge)
+
+            # 找到下一个顶点
+            edge_vtxs = mc.polyInfo(f"{transform_node[0]}.e[{next_edge}]", ev=True)
+            vtx_nums = []
+            parts = (edge_vtxs[0].split(':')[1].split('\n')[0]).split(' ')
+            for part in parts:
+                num = ''.join([n for n in part.split('|')[-1] if n.isdigit()])
+                if num:
+                    vtx_nums.append(num)
+
+            # 更新顶点顺序
+            next_vtx = [g for g in vtx_nums if g in duplicates][0]
+            duplicates.remove(next_vtx)
+            vertex_order.append(next_vtx)
+            count += 1
+
+        # 处理开放/闭合边环的顶点列表
+        if circle_state == 0 and len(endpoints) > 1:
+            vertex_order.append(endpoints[1])
+        else:
+            # 移除闭合边环的重复顶点
+            if vertex_order[0] == vertex_order[1]:
+                vertex_order = vertex_order[1:]
+            elif vertex_order[0] == vertex_order[-1]:
+                vertex_order = vertex_order[:-1]
+
+        # 格式化顶点路径
+        final_vertices = [
+            f"{transform_node[0]}.vtx[{v}]" for v in vertex_order
+        ]
+        return circle_state, final_vertices
+######
     def updateBonMeshTool(self):
         # 获取Maya用户自定义脚本目录
         script_directory = cmds.internalVar(userScriptDir=True)
@@ -614,6 +885,8 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             if cuvname != desired_name:
                 cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
         cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
+
+
 ###
 def show_bon_mesh_tool_ui():
     global bon_mesh_tool_ui
