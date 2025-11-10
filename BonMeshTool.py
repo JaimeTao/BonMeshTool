@@ -23,6 +23,8 @@
 ## 添加功能 : 修复存储边和读取存储边bug
 ## 更新时间 : 2025/09/10-版本01
 ## 添加功能 : 添加平均化边长功能
+## 更新时间 : 2025/11/10-版本01
+## 添加功能 : 对间隔选择工具做了是否开启对称的判断
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -32,6 +34,54 @@ import maya.mel as mel
 import subprocess
 import os
 import re
+
+# ---- Symmetry detection helpers ----
+def _mt_symmetry_on():
+    # Modeling Toolkit 对称
+    try:
+        comp_sym_on = cmds.symmetricModelling(query=True, symmetry=True)
+    except Exception:
+        comp_sym_on = False
+
+    any_axis_on = False
+    for flag in ("topology", "objectX", "objectY", "objectZ", "worldX", "worldY", "worldZ"):
+        try:
+            val = cmds.symmetricModelling(query=True, **{flag: True})
+            if isinstance(val, bool) and val:
+                any_axis_on = True
+        except Exception:
+            pass
+    return bool(comp_sym_on or any_axis_on)
+
+def _legacy_symmetry_on():
+    # 常见 optionVar
+    for var in ("symmetry", "modelingToolkitSymmetry", "polySymmetryEnabled"):
+        try:
+            if cmds.optionVar(exists=var):
+                val = cmds.optionVar(q=var)
+                if isinstance(val, (int, bool)) and int(val) != 0:
+                    return True
+        except Exception:
+            pass
+    # 当前工具上下文
+    try:
+        ctx = cmds.currentCtx()
+        if ctx:
+            for attr in ("symmetry", "symmetryEnabled"):
+                try:
+                    val = cmds.contextInfo(ctx, q=True, **{attr: True})
+                    if isinstance(val, (int, bool)) and int(val) != 0:
+                        return True
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return False
+
+def is_symmetry_on():
+    """若开启对称返回 True，否则 False。"""
+    return _mt_symmetry_on() or _legacy_symmetry_on()
+
 
 class CollapsibleSection(QWidget):
     def __init__(self, title="", parent=None):
@@ -266,34 +316,22 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         launch_button.clicked.connect(self.launch_rizom)
         self.layout().addWidget(Bridge_section)
 ###### 平均化边长UI######
-        # 平均化边长度模块 - 独立布局+正确事件绑定
         average_section = CollapsibleSection("边长优化")
-        # 创建独立的布局容器（避免复用其他模块的transfer_layout导致错乱）
         average_widget = QWidget()
-        average_layout = QHBoxLayout()  # 独立水平布局
-        average_widget.setLayout(average_layout)  # 给容器设置布局
-        
-        # 1. 创建平均边长按钮
+        average_layout = QHBoxLayout()
+        average_widget.setLayout(average_layout)
         self.average_edge_btn = QPushButton('平均边长')
-        # 设置按钮样式（与其他功能按钮视觉统一）
-        self.average_edge_btn.setMinimumHeight(30)  # 增加按钮高度，提升点击体验
-        # 2. 绑定按钮事件：直接触发平均化命令（固定传递"Average"模式参数）
+        self.average_edge_btn.setMinimumHeight(30)
         self.average_edge_btn.clicked.connect(
-            lambda: self.even_edge_loop_doit_run("even")  # 传递smooth_type为"even"（对应Average模式）
+            lambda: self.even_edge_loop_doit_run("even")
         )
-        
-        # 3. 将按钮添加到独立布局中
         average_layout.addWidget(self.average_edge_btn)
-        # 4. 将布局容器添加到折叠面板
         average_section.addWidget(average_widget)
-        # 5. 将整个平均化模块添加到主界面
         self.layout().addWidget(average_section)
 ### 平均化线段长度模块结束 ###
-        # 添加一个扩展项来推动按钮到底部
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.layout().addItem(spacer)
 
-        # 按钮布局
         button_layout = QHBoxLayout()
         self.update_button = QPushButton('自动更新')
         self.save_settings_button = QPushButton('保存窗口设置')
@@ -301,25 +339,23 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         button_layout.addWidget(self.save_settings_button)
         self.layout().addLayout(button_layout)
 
-        # 按钮连接功能
         self.update_button.clicked.connect(self.updateBonMeshTool)
         self.save_settings_button.clicked.connect(self.save_window_settings)
 
     def RenameUVSetCmd(self, *args):
         selected_objects = cmds.ls(type='mesh')
-        desired_name = self.rename_line_edit.text()  # 获取文本输入框的内容
+        desired_name = self.rename_line_edit.text()
         for s_object in selected_objects:
             uv_ids = cmds.polyUVSet(s_object, query=True, allUVSetsIndices=True)
             for i in uv_ids:
                 if i != 0:
-                    cuvname = cmds.getAttr(f"{s_object}.uvSet[{i}].uvSetName")
+                    cuvname = cmds.getAttr("{0}.uvSet[{1}].uvSetName".format(s_object, i))
                     cmds.polyUVSet(s_object, delete=True, uvSet=cuvname)
         for each_element in selected_objects:
-            cuvname = cmds.getAttr(f"{each_element}.uvSet[0].uvSetName")
+            cuvname = cmds.getAttr("{0}.uvSet[0].uvSetName".format(each_element))
             if cuvname != desired_name:
                 cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
-        #cmds.warning("重命名UV集为：", desired_name)
-        cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
+        cmds.inViewMessage(amg='重命名UV集为：{0}'.format(desired_name), pos='midCenter', fade=True)
 
     def DisplayTriangle(self, *args):
         isChecked = self.display_triangle_checkbox.isChecked()
@@ -349,28 +385,22 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         self.SoftenEdgeCmd()
 
     def get_store_clean_selection(self):
-        """获取当前选择的对象并存储，启用边选择模式，清空当前选择，然后重新选择对象。"""
-        # 获取当前选择的对象并存储
         selection = cmds.ls(sl=True, l=True)
         if not selection:
             return None
-
-        # 启用边选择掩码并清空当前选择
-        cmds.SelectEdgeMask()          # 启用边选择掩码
-        cmds.selectType(edge=True)     # 设置选择类型为边
-        cmds.select(deselect=True)     # 清空当前选择
-
-        # 重新选择之前存储的对象
+        cmds.SelectEdgeMask()
+        cmds.selectType(edge=True)
+        cmds.select(deselect=True)
         cmds.select(selection)
-
         return selection
 
     def SelUVBrodenEdgeCmd(self, *args):
-        # 获取当前选择的对象并清空当前选择存储
         selection = self.get_store_clean_selection()
-        # 执行选择 UV 边界的逻辑
         mesh_edges = []
         uv_border_edges = []
+
+        if not selection:
+            return
 
         for s in selection:
             try:
@@ -384,22 +414,16 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             for e in mesh_edges:
                 edge_uvs = cmds.ls(cmds.polyListComponentConversion(e, tuv=True), fl=True)
                 edge_faces = cmds.ls(cmds.polyListComponentConversion(e, tf=True), fl=True)
-                
-                # 判断是否为UV边界边或孤立边
                 if len(edge_uvs) > 2:
                     uv_border_edges.append(e)
                 elif len(edge_faces) < 2:
                     uv_border_edges.append(e)
 
-        # 如果找到 UV 边界边，选择这些边
         if uv_border_edges:
             cmds.select(uv_border_edges)
 
     def SelHardenEdgeCmd (self, *args):
-        # 获取当前选择的对象并清空当前选择存储
-        selection = self.get_store_clean_selection()
-
-        # 设置边选择约束
+        self.get_store_clean_selection()
         cmds.polySelectConstraint(m=3, t=0x8000, sm=1)
         cmds.polySelectConstraint(m=0)
 
@@ -413,14 +437,10 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             return
 
         stored_edges = selected_edges
-        print(f"存储了 {len(stored_edges)} 条边。")
+        print("存储了 {0} 条边。".format(len(stored_edges)))
 
     def select_edges(self, *args):
-
-
-        # 获取当前选择的对象并清空当前选择存储
-        selection = self.get_store_clean_selection()
-
+        self.get_store_clean_selection()
         global stored_edges
 
         if not stored_edges:
@@ -429,9 +449,9 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
         try:
             cmds.select(stored_edges, replace=True)
-            print(f"选择了 {len(stored_edges)} 条边。")
+            print("选择了 {0} 条边。".format(len(stored_edges)))
         except RuntimeError as e:
-            cmds.warning(f"选择存储的边时出错: {e}")
+            cmds.warning("选择存储的边时出错: {0}".format(e))
 
     def TranPositoUVCmd (self, *args):
         cmds.transferAttributes(transferUVs=1,sampleSpace=1,searchMethod=3,)
@@ -446,11 +466,11 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         cmds.delete(constructionHistory=True)
 
     def Ring_slider_value_changed(self, value):
-        self.Ring_value_label.setText("Ring间隔数: %d" % value)
+        self.Ring_value_label.setText("Ring间隔数: {0}".format(value))
         self.preview_selection()
 
     def loop_slider_value_changed(self, value):
-        self.loop_value_label.setText("loop间隔数: %d" % value)
+        self.loop_value_label.setText("loop间隔数: {0}".format(value))
         self.preview_selection()
 
     def get_current_Ring_slider_value(self):
@@ -463,14 +483,28 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         print("Current loop slider value:", current_value)
         return current_value
 
-    def get_selected_edge_count(self):
+    def get_selected_edge_count_raw(self):
         selection = cmds.ls(selection=True, flatten=True)
         edge_count = 0
+        if not selection:
+            return 0
         for item in selection:
             if '.e[' in item:
                 edge_count += 1
-        print("Selected edge count:", edge_count)
+        print("Raw selected edge count:", edge_count)
         return edge_count
+
+    def get_selected_edge_count(self):
+        raw = self.get_selected_edge_count_raw()
+        try:
+            if is_symmetry_on():
+                eff = raw // 2
+                print("Symmetry ON. Effective selected edge count: {0} (raw: {1})".format(eff, raw))
+                return eff
+        except Exception:
+            pass
+        print("Symmetry OFF. Effective selected edge count:", raw)
+        return raw
 
     def store_selected_edges(self):
         self.selected_edges = cmds.ls(selection=True, flatten=True)
@@ -487,7 +521,7 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         mel.eval('polySelectEdgesEveryN("edgeLoop", 1)')
 
     def preview_selection(self):
-        if not self.selected_edges:
+        if not hasattr(self, 'selected_edges') or not self.selected_edges:
             return
 
         cmds.select(clear=True)
@@ -497,14 +531,11 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         current_Ring_value = self.get_current_Ring_slider_value()
         current_Loop_value = self.get_current_loop_slider_value()
 
-        # Condition for edgeRing selection
         if current_Ring_value != 0:
             n = edge_count + current_Ring_value
             print("Computed Ring value (n):", n)
             mel.eval('polySelectEdgesEveryN("edgeRing", {0})'.format(n))
 
-        # Condition for edgeLoop selection
-        x = edge_count + current_Loop_value
         if current_Loop_value != 0:
             x = edge_count + current_Loop_value
         else:
@@ -527,8 +558,8 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 
     def write_loader(self):
         self.RizomUVDir = self.Bridge_Dir_line_edit.text()
-        ZomLuaScript = ('ZomLoad({File={Path="' + self.ObjectDir + '", ImportGroups=true, XYZUVW=true, UVWProps=true}})')
-        U3dLuaScript = ('U3dLoad({File={Path="' + self.ObjectDir + '", ImportGroups=true, XYZUVW=true, UVWProps=true}})')
+        ZomLuaScript = 'ZomLoad({File={Path="' + self.ObjectDir + '", ImportGroups=true, XYZUVW=true, UVWProps=true}})'
+        U3dLuaScript = 'U3dLoad({File={Path="' + self.ObjectDir + '", ImportGroups=true, XYZUVW=true, UVWProps=true}})'
         if 'rizomuv.exe' in self.RizomUVDir:
             with open(self.LoaderDir, 'wt') as f:
                 f.write(ZomLuaScript)
@@ -567,20 +598,16 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
 ###平均化线段长度###
 
     def even_edge_loop_doit_run(self, smooth_type):
-        """处理选中的边环组，执行均匀化操作"""
-        # 获取当前选择的边
         sel = cmds.ls(selection=True, fl=1)
         if not sel:
             cmds.warning("请先选择多边形的边")
             return
 
-        # 保存原始形状节点
         shape = cmds.listRelatives(sel, parent=True)
         if not shape:
             cmds.warning("无法获取选择的形状节点")
             return
 
-        # 临时调整显示平滑度
         cmds.displaySmoothness(
             divisionsU=0,
             divisionsV=0,
@@ -589,52 +616,41 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             polygonObject=1
         )
 
-        # 获取边环组并处理
         edge_loop_groups = self.get_edge_ring_group(0, '')
         for group in edge_loop_groups:
             cmds.select(group)
             self.even_edge_loop_doit(smooth_type)
 
-        # 恢复初始选择状态
         cmds.select(sel)
-        # 恢复边组件选择模式
-        cmd = f'doMenuComponentSelection("{shape[0]}", "edge");'
+        cmd = 'doMenuComponentSelection("{0}", "edge");'.format(shape[0])
         mel.eval(cmd)
         cmds.select(sel)
 
     def even_edge_loop_doit(self, smooth_type):
-        """对单个边环执行均匀化处理"""
-        # 清理临时曲线
         temp_curve = 'tempEvenCurve'
         if cmds.objExists(temp_curve):
             cmds.delete(temp_curve)
 
-        # 获取当前选择的边
         sel = cmds.ls(selection=True, fl=1)
         if not sel:
             return
 
-        # 检查边环顶点顺序
         circle_state, vertex_list = self.vtx_loop_order_check()
         
-        # 将边环转换为曲线
         cmds.polyToCurve(
             form=2,
             degree=1,
             conformToSmoothMeshPreview=1
         )
         cmds.rename(temp_curve)
-        curve_cvs = cmds.ls(f'{temp_curve}.cv[*]', fl=1)
+        curve_cvs = cmds.ls(temp_curve + '.cv[*]', fl=1)
 
-        # 校正顶点顺序
         curve_pos = cmds.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)
         edge_pos = cmds.xform(vertex_list[0], a=1, ws=1, q=1, t=1)
         if curve_pos != edge_pos:
             vertex_list = vertex_list[::-1]
 
-        # 处理曲线（仅保留Average模式）
         if len(curve_cvs) > 2:
-            # 重建曲线为线性
             cmds.rebuildCurve(
                 temp_curve,
                 ch=1,
@@ -649,35 +665,27 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                 d=1,
                 tol=0
             )
-            
-            # 处理少量CV点的情况
             if len(curve_cvs) < 4:
-                cmds.delete(f'{temp_curve}.cv[1]', f'{temp_curve}.cv[3]')
-                curve_cvs = cmds.ls(f'{temp_curve}.cv[*]', fl=1)
+                cmds.delete(temp_curve + '.cv[1]', temp_curve + '.cv[3]')
+                curve_cvs = cmds.ls(temp_curve + '.cv[*]', fl=1)
 
-            # 校验顶点顺序（处理浮点精度）
             curve_pos = [round(p, 3) for p in cmds.xform(curve_cvs[0], a=1, ws=1, q=1, t=1)]
             edge_pos = [round(p, 3) for p in cmds.xform(vertex_list[0], a=1, ws=1, q=1, t=1)]
 
-        # 应用曲线位置到顶点
-        cmds.delete(temp_curve, ch=1)  # 删除历史
+        cmds.delete(temp_curve, ch=1)
         for i in range(len(curve_cvs)):
             pos = cmds.xform(curve_cvs[i], a=1, ws=1, q=1, t=1)
             cmds.xform(vertex_list[i], a=1, ws=1, t=(pos[0], pos[1], pos[2]))
         
-        # 清理临时曲线
         cmds.delete(temp_curve)
 
     def get_edge_ring_group(self, list_sort, list_input):
-        """获取并分组连续的边环"""
         sel_edges = cmds.ls(selection=True, fl=1)
         if not sel_edges:
             return []
 
-        # 提取变换节点
         trans = sel_edges[0].split(".")[0]
         
-        # 构建边-顶点映射字典
         e2v_dict = {}
         e2v_infos = cmds.polyInfo(sel_edges, ev=True)
         for info in e2v_infos:
@@ -685,7 +693,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             e2v_dict[ev_list[0]] = ev_list[1:]
 
         edge_groups = []
-        # 遍历边字典，聚合连续的边
         while e2v_dict:
             try:
                 start_edge, start_vtxs = e2v_dict.popitem()
@@ -697,17 +704,13 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             for vtx in start_vtxs:
                 current_vtx = vtx
                 while True:
-                    # 查找关联的边
                     next_edges = [k for k in e2v_dict if current_vtx in e2v_dict[k]]
                     if next_edges and len(next_edges) == 1:
                         next_edge = next_edges[0]
-                        # 按方向插入边
                         if num == 0:
                             edges_grp.append(next_edge)
                         else:
                             edges_grp.insert(0, next_edge)
-                        
-                        # 更新当前顶点
                         next_vtxs = e2v_dict[next_edge]
                         current_vtx = [v for v in next_vtxs if v != current_vtx][0]
                         e2v_dict.pop(next_edge)
@@ -716,25 +719,21 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                 num += 1
             edge_groups.append(edges_grp)
 
-        # 格式化边路径
         return [
-            [f"{trans}.e[{str(edge)}]" for edge in group]
+            [trans + '.e[' + str(edge) + ']' for edge in group]
             for group in edge_groups
         ]
 
     def vtx_loop_order_check(self):
-        """检查并获取边环顶点的有序列表"""
         sel_edges = cmds.ls(selection=True, fl=1)
         if not sel_edges:
             return 0, []
 
-        # 获取形状节点和变换节点
         shape_node = cmds.listRelatives(sel_edges[0], fullPath=True, parent=True)
         transform_node = cmds.listRelatives(shape_node[0], fullPath=True, parent=True)
         if not transform_node:
             return 0, []
 
-        # 提取边ID列表
         edge_number_list = []
         for edge in sel_edges:
             parts = (edge.split('.')[1].split('\n')[0]).split(' ')
@@ -743,7 +742,6 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                 if number:
                     edge_number_list.append(number)
 
-        # 提取顶点ID
         vertex_numbers = []
         for edge in sel_edges:
             ev_list = cmds.polyInfo(edge, ev=True)
@@ -753,21 +751,18 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                 if number:
                     vertex_numbers.append(number)
 
-        # 确定端点和闭合状态
         duplicates = set([x for x in vertex_numbers if vertex_numbers.count(x) > 1])
         endpoints = list(set(vertex_numbers) - duplicates)
-        circle_state = 0  # 0=开放, 1=闭合
+        circle_state = 0
 
-        if not endpoints:  # 闭合边环
+        if not endpoints:
             circle_state = 1
             endpoints.append(vertex_numbers[0])
 
-        # 构建顶点顺序
         vertex_order = [endpoints[0]]
         count = 0
         while duplicates and count < 1000:
-            # 获取当前顶点关联的边
-            current_vtx = f"{transform_node[0]}.vtx[{vertex_order[-1]}]"
+            current_vtx = "{0}.vtx[{1}]".format(transform_node[0], vertex_order[-1])
             ve_list = cmds.polyInfo(current_vtx, ve=True)
             edge_nums = []
             parts = (ve_list[0].split(':')[1].split('\n')[0]).split(' ')
@@ -776,12 +771,10 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                 if num:
                     edge_nums.append(num)
 
-            # 找到下一条边
             next_edge = [g for g in edge_nums if g in edge_number_list][0]
             edge_number_list.remove(next_edge)
 
-            # 找到下一个顶点
-            edge_vtxs = cmds.polyInfo(f"{transform_node[0]}.e[{next_edge}]", ev=True)
+            edge_vtxs = cmds.polyInfo("{0}.e[{1}]".format(transform_node[0], next_edge), ev=True)
             vtx_nums = []
             parts = (edge_vtxs[0].split(':')[1].split('\n')[0]).split(' ')
             for part in parts:
@@ -789,46 +782,34 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                 if num:
                     vtx_nums.append(num)
 
-            # 更新顶点顺序
             next_vtx = [g for g in vtx_nums if g in duplicates][0]
             duplicates.remove(next_vtx)
             vertex_order.append(next_vtx)
             count += 1
 
-        # 处理开放/闭合边环的顶点列表
         if circle_state == 0 and len(endpoints) > 1:
             vertex_order.append(endpoints[1])
         else:
-            # 移除闭合边环的重复顶点
             if vertex_order[0] == vertex_order[1]:
                 vertex_order = vertex_order[1:]
             elif vertex_order[0] == vertex_order[-1]:
                 vertex_order = vertex_order[:-1]
 
-        # 格式化顶点路径
         final_vertices = [
-            f"{transform_node[0]}.vtx[{v}]" for v in vertex_order
+            "{0}.vtx[{1}]".format(transform_node[0], v) for v in vertex_order
         ]
         return circle_state, final_vertices
 ######
     def updateBonMeshTool(self):
-        # 获取Maya用户自定义脚本目录
         script_directory = cmds.internalVar(userScriptDir=True)
-        print(f"脚本目录: {script_directory}")
-        
-        # 拼接完整路径
+        print("脚本目录: {0}".format(script_directory))
         full_path = os.path.join(script_directory, 'BonMeshTool')
-        print(f"完整路径: {full_path}")
-        
-        # 初始化消息内容
+        print("完整路径: {0}".format(full_path))
         message = ""
-        
-        # 检查BonMeshTool文件夹是否存在
         if not os.path.exists(full_path):
             print("BonMeshTool 文件夹不存在")
             message = 'BonMeshTool 文件夹不存在，请自行检查'
         else:
-            # 执行git pull命令
             try:
                 print("执行 git pull 命令")
                 result = subprocess.run(
@@ -838,23 +819,17 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
                     stderr=subprocess.PIPE,
                     text=True
                 )
-        
-                print(f"git pull 输出: {result.stdout}")
-                print(f"git pull 错误: {result.stderr}")
-                
-                # 检查输出结果
+                print("git pull 输出: {0}".format(result.stdout))
+                print("git pull 错误: {0}".format(result.stderr))
                 if "Already up to date." in result.stdout:
                     print("已经是最新的版本")
                     message = '已经是最新的版本'
                 else:
                     print("更新成功")
                     message = '更新成功'
-            
             except subprocess.CalledProcessError as e:
-                print(f"更新失败: {e.stderr}")
+                print("更新失败: {0}".format(e.stderr))
                 message = '更新失败'
-    
-        # 使用QTimer来延迟显示消息
         QTimer.singleShot(100, lambda: cmds.inViewMessage(amg=message, pos='midCenter', fade=True))
         
     def restore_window_settings(self):
@@ -879,13 +854,16 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             uv_ids = cmds.polyUVSet(s_object, query=True, allUVSetsIndices=True)
             for i in uv_ids:
                 if i != 0:
-                    cuvname = cmds.getAttr(f"{s_object}.uvSet[{i}].uvSetName")
+                    cuvname = cmds.getAttr("{0}.uvSet[{1}].uvSetName".format(s_object, i))
                     cmds.polyUVSet(s_object, delete=True, uvSet=cuvname)
         for each_element in selected_objects:
-            cuvname = cmds.getAttr(f"{each_element}.uvSet[0].uvSetName")
-            if cuvname != desired_name:
-                cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
-        cmds.inViewMessage(amg=f'重命名UV集为：{desired_name}', pos='midCenter', fade=True)
+            cuvname = cmds.getAttr("{0}.uvSet[0].uvSetName".format(each_element))
+        if selected_objects:
+            for each_element in selected_objects:
+                cuvname = cmds.getAttr("{0}.uvSet[0].uvSetName".format(each_element))
+                if cuvname != desired_name:
+                    cmds.polyUVSet(each_element, rename=True, newUVSet=desired_name, uvSet=cuvname)
+        cmds.inViewMessage(amg='重命名UV集为：{0}'.format(desired_name), pos='midCenter', fade=True)
 
 
 ###
