@@ -27,6 +27,8 @@
 ## 添加功能 : 对间隔选择工具做了是否开启对称的判断
 ## 更新时间 : 2026/4/15-版本01
 ## 添加功能 : 新增清理工具，用于清理重合的重复模型和零面积面
+## 更新时间 : 2026/11/13-版本01
+## 添加功能 : 新增UV编辑工具：水平拉直、垂直拉直、自然拉直
 ##--------------------------------------------------------------------------
 from maya.app.general.mayaMixin import MayaQWidgetDockableMixin
 from PySide2.QtWidgets import *
@@ -35,7 +37,17 @@ import maya.cmds as cmds
 import maya.mel as mel
 import subprocess
 import os
+import sys
 import re
+import shutil
+
+# ---- Local UV rectangularize module ----
+_BON_MESH_TOOL_DIR = (os.path.dirname(os.path.abspath(__file__))
+                      if "__file__" in globals()
+                      else os.path.join(cmds.internalVar(userScriptDir=True), "BonMeshTool"))
+if _BON_MESH_TOOL_DIR not in sys.path:
+    sys.path.insert(0, _BON_MESH_TOOL_DIR)
+import rizom_rectangularize
 
 # ---- Symmetry detection helpers ----
 def _mt_symmetry_on():
@@ -79,6 +91,91 @@ def _legacy_symmetry_on():
 
 def is_symmetry_on():
     return _mt_symmetry_on() or _legacy_symmetry_on()
+
+
+# ---- FBX incremental export helpers ----
+_FBX_BACKUP_PATTERN = re.compile(
+    r"^(?P<base>.+)_v(?P<number>\d+)\.fbx$",
+    re.IGNORECASE,
+)
+
+
+def _find_file_case_insensitive(path):
+    """按文件名大小写不敏感查找文件。"""
+    if os.path.isfile(path):
+        return path
+
+    directory = os.path.dirname(path) or os.curdir
+    wanted_name = os.path.basename(path).lower()
+    if not os.path.isdir(directory):
+        return None
+
+    for item in os.listdir(directory):
+        if item.lower() == wanted_name:
+            candidate = os.path.join(directory, item)
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
+def _find_existing_fbx_export_path(target_path):
+    """查找 Maya 可能实际生成的 FBX 文件，不修改目标路径。"""
+    target_path = os.path.normpath(target_path)
+    existing = _find_file_case_insensitive(target_path)
+    if existing:
+        return existing
+
+    filename = os.path.basename(target_path)
+    extension = os.path.splitext(filename)[1].lower()
+
+    # 用户输入无后缀时，Maya/FBX 可能生成 aaa.FBX.fbx；
+    # 已输入 aaa.FBX 时，常见结果为 aaa.FBX.fbx。
+    if extension:
+        candidates = (target_path + ".fbx", target_path + ".FBX.fbx")
+    else:
+        candidates = (
+            target_path + ".FBX.fbx",
+            target_path + ".fbx",
+            target_path + ".FBX",
+        )
+
+    for candidate in candidates:
+        existing = _find_file_case_insensitive(candidate)
+        if existing:
+            return existing
+    return None
+
+
+def _next_fbx_backup_path(existing_path):
+    """根据旧文件的实际名称生成下一个不冲突的备份路径。"""
+    directory = os.path.dirname(existing_path) or os.curdir
+    filename = os.path.basename(existing_path)
+    base, _ = os.path.splitext(filename)
+
+    max_number = 0
+    for item in os.listdir(directory):
+        match = _FBX_BACKUP_PATTERN.match(item)
+        if match and match.group("base").lower() == base.lower():
+            max_number = max(max_number, int(match.group("number")))
+
+    number = max_number + 1
+    while True:
+        backup_name = "{}_v{:03d}.fbx".format(base, number)
+        backup_path = os.path.join(directory, backup_name)
+        if _find_file_case_insensitive(backup_path) is None:
+            return backup_path
+        number += 1
+
+
+def _backup_existing_fbx_export(target_path):
+    """备份已有 FBX；首次导出时不创建任何备份文件。"""
+    existing_path = _find_existing_fbx_export_path(target_path)
+    if not existing_path:
+        return None, None
+
+    backup_path = _next_fbx_backup_path(existing_path)
+    shutil.move(existing_path, backup_path)
+    return existing_path, backup_path
 
 
 class CollapsibleSection(QWidget):
@@ -277,8 +374,8 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         interval_section.addWidget(slider_widget); interval_section.addWidget(button_widget)
         self.layout().addWidget(interval_section)
 
-        # RizomUV Section
-        Bridge_section = CollapsibleSection("RizomUV Bridge")
+        # RizomUV / UV Editing Section
+        Bridge_section = CollapsibleSection("UV编辑")
         Bridge_Dir_widget = QWidget()
         Bridge_Dir_layout = QHBoxLayout()
         Bridge_Dir_button = QPushButton('更新路径')
@@ -298,7 +395,41 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         button_row_widget.setLayout(button_row_layout)
         Bridge_section.addWidget(button_row_widget)
         export_button.clicked.connect(self.export_obj); import_button.clicked.connect(self.import_obj); launch_button.clicked.connect(self.launch_rizom)
+
+        # UV Rectangularize Buttons
+        uv_rect_separator = QFrame()
+        uv_rect_separator.setFrameShape(QFrame.HLine)
+        uv_rect_separator.setFrameShadow(QFrame.Sunken)
+        Bridge_section.addWidget(uv_rect_separator)
+
+        uv_rect_widget = QWidget()
+        uv_rect_layout = QHBoxLayout()
+        uv_rect_layout.setSpacing(4)
+        horizontalize_button = QPushButton('水平拉直')
+        verticalize_button = QPushButton('垂直拉直')
+        naturalize_button = QPushButton('自然拉直')
+        uv_rect_layout.addWidget(horizontalize_button)
+        uv_rect_layout.addWidget(verticalize_button)
+        uv_rect_layout.addWidget(naturalize_button)
+        uv_rect_widget.setLayout(uv_rect_layout)
+        Bridge_section.addWidget(uv_rect_widget)
+        horizontalize_button.clicked.connect(rizom_rectangularize.rectangularize_horizontal)
+        verticalize_button.clicked.connect(rizom_rectangularize.rectangularize_vertical)
+        naturalize_button.clicked.connect(rizom_rectangularize.rectangularize_natural)
+
         self.layout().addWidget(Bridge_section)
+
+        # FBX Incremental Export Section
+        fbx_export_section = CollapsibleSection("FBX增量导出")
+        fbx_export_widget = QWidget()
+        fbx_export_layout = QHBoxLayout()
+        fbx_export_button = QPushButton('导出当前选择')
+        fbx_export_button.setMinimumHeight(28)
+        fbx_export_layout.addWidget(fbx_export_button)
+        fbx_export_widget.setLayout(fbx_export_layout)
+        fbx_export_section.addWidget(fbx_export_widget)
+        self.layout().addWidget(fbx_export_section)
+        fbx_export_button.clicked.connect(self.export_selected_fbx_incremental)
 
         # Average Edge Section
         average_section = CollapsibleSection("边长优化")
@@ -585,6 +716,83 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
             cmds.file(self.ObjectDir, force=1, type='FBX export', op='groups=1', pr=1, es=1)
         elif 'obj' in self.ObjectType:
             cmds.file(self.ObjectDir, force=1, type="OBJexport", options="groups=1;ptgroups=1;materials=1;smoothing=1;normals=1", es=1)
+
+    def export_selected_fbx_incremental(self, *args):
+        """按 Maya 原生逻辑导出当前选择，并在覆盖前生成递增备份。"""
+        selection = cmds.ls(selection=True, objectsOnly=True)
+        if not selection:
+            cmds.warning(u"请先选择需要导出的模型！")
+            return
+
+        if not cmds.pluginInfo('fbxmaya', query=True, loaded=True):
+            try:
+                cmds.loadPlugin('fbxmaya', quiet=True)
+            except Exception as error:
+                cmds.warning(u"FBX插件加载失败：{0}".format(error))
+                return
+
+        result = cmds.fileDialog2(
+            fileMode=0,
+            caption=u"导出选择物 FBX（增量备份）",
+            fileFilter="FBX Files (*.fbx)",
+            dialogStyle=2,
+            okCaption=u"导出",
+        )
+        if not result:
+            return
+
+        target_path = os.path.normpath(result[0])
+        if not os.path.basename(target_path):
+            cmds.warning(u"导出文件名不能为空！")
+            return
+
+        target_directory = os.path.dirname(target_path)
+        if not target_directory or not os.path.isdir(target_directory):
+            cmds.warning(u"导出目录不存在：{0}".format(target_directory or os.curdir))
+            return
+
+        original_path = None
+        backup_path = None
+        try:
+            # 不修改 Maya 返回的路径，不主动添加或删除任何后缀。
+            original_path, backup_path = _backup_existing_fbx_export(target_path)
+
+            # 只导出当前选择；实际扩展名由 Maya/FBX 导出器决定。
+            cmds.file(
+                target_path,
+                force=True,
+                type='FBX export',
+                op='groups=1',
+                pr=1,
+                es=1,
+            )
+        except Exception as error:
+            # 导出失败时删除可能生成的新文件，并尝试恢复旧版本。
+            try:
+                failed_path = _find_existing_fbx_export_path(target_path)
+                if failed_path:
+                    os.remove(failed_path)
+            except Exception:
+                pass
+
+            if backup_path and os.path.isfile(backup_path):
+                try:
+                    shutil.move(backup_path, original_path)
+                except Exception as restore_error:
+                    cmds.warning(
+                        u"恢复旧版本失败，请手动检查：{0}；错误：{1}".format(
+                            backup_path, restore_error
+                        )
+                    )
+
+            cmds.warning(u"FBX导出失败：{0}".format(error))
+            return
+
+        message = u"FBX导出完成：{0}".format(target_path)
+        if backup_path:
+            message += u"<br>旧版本已备份为：{0}".format(backup_path)
+        cmds.inViewMessage(amg=message, pos='midCenter', fade=True)
+        print(message.replace('<br>', '\n'))
 
     def launch_rizom(self):
         subprocess.Popen('"' + self.RizomUVDir + '"' + ' -cfi ' + self.LoaderDir)
