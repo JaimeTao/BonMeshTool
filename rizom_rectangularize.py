@@ -1,62 +1,57 @@
 # -*- coding: utf-8 -*-
 """
-RizomUV-style "Rectangularize Polygons" for Maya  (Maya 2022+ / Python 3)
+UV拉直工具 (UV Straighten Tool) for Maya 2018 and newer  (Python 2.7 / 3.x)
 
-Reproduces
+Rebuilds a connected patch of UV quads as a regular rectangular grid:
 
-    RizomUV 2024.1  >  Straighten  >  Rectangularize Polygons              
-    RizomUV 2024.1  >  Straighten  >  Rectangularize Polygons Horizontally 
-    RizomUV 2024.1  >  Straighten  >  Rectangularize Polygons Vertically   
+    Horizontal   水平拉直 - long side of the patch along U
+    Vertical     垂直拉直 - long side of the patch along V
+    Natural      自然拉直 - keep the fitted orientation of the patch
 
-Reverse engineering summary (full trace in README.md next to this file)
-----------------------------------------------------------------------
-* All three entries are registered in the RizomUV UI command table
-  (rizomuv.exe 2024.1.56.g5e9e9052, image base 0x140000000):
-      ZOMID_RECTANGULARIZE_UI               id 0x2ED (749)  
-      ZOMID_RECTANGULARIZE_VERTICALLY_UI    id 0x2F0 (752)  
-      ZOMID_RECTANGULARIZE_HORIZONTALLY_UI  id 0x2F1 (753)  
-  and end up in the same routine
-      NZOM::NGeoTopo::Mesh::Rectangularize( CSubMesh&, vector<unsigned>&, string rule )
-  (RVA 0x5D9B710, asserts "Polygons must be quad only in that method" and
-  "Polygons are not connected").  The string argument is the only difference:
-  "Horizontalize" / "Verticalize" / "" and it is only used to rotate the result
-  by 90 degrees at the very end.
-* The routine embeds the selected connected quad patch into an integer lattice,
-  measures the mean edge length along both lattice directions and rebuilds the
-  patch as a true rectangular grid; the centroid is preserved.
+The grid is built from the mean edge length of every lattice line, so strongly
+curved strips stay unfolded instead of folding onto themselves.  The UV area
+and the centroid of each patch are preserved.
 
-Why edge lengths and not averaged vertex projections
----------------------------------------------------
-RizomUV compresses a strongly curved strip into its projected extent
-(a 130 deg arc loses ~28% of its UV area, a 260 deg arc ~75%).  Averaging raw
-projections reproduces that shrink but folds the strip onto itself for arcs
-close to / above 180 degrees, which shows up as overlapping UVs on the two end
-edges of the patch.  Building the grid from mean edge lengths keeps the strip
-unfolded, keeps its UV area and matches RizomUV to ~1-2% on ordinary (mildly
-distorted) grids.  This module uses the edge length construction and rescales
-the result so that the total UV area of the patch is preserved.
+Every patch must be made of quads only and must be one connected quad grid in
+UV space; other patches are skipped with a warning.
 
 Usage
 -----
-    import rizom_rectangularize as rz
-    rz.rectangularize(rule="H")     # horizontal
-    rz.rectangularize(rule="V")     # vertical
-    rz.rectangularize(rule="N")     # rectangularize, keep fitted orientation
+Drag this single .py file into a Maya viewport to install it.  The installer
+copies the file to Maya's user scripts directory and adds a button to the
+currently active shelf.  Clicking that shelf button reloads this module and
+opens the tool window.
 
-    rz.show_ui()                    # small window with the three buttons
+Window buttons: click to run; Ctrl+Shift+click to add the action to the
+active shelf; middle-mouse drag to copy the native shelf button to a shelf.
 
-Select UV faces (or whole objects) before calling.  Every patch must be made of
-quads only and must be one connected quad grid in UV space.
+Keep editing the file you dropped: the shelf button copies it into Maya's
+scripts directory again before importing it, so the installed copy never goes
+stale and the tool never has to be re-installed.
+
+    import maya_uv_straighten as uvr
+    uvr.rectangularize(rule="H")     # 水平拉直
+    uvr.rectangularize(rule="V")     # 垂直拉直
+    uvr.rectangularize(rule="N")     # 自然拉直
+
+    uvr.show_ui()                    # small window with the three buttons
+
+Select UV faces (or whole objects) before calling.
 """
 
 from __future__ import print_function
 
 import math
+import os
+import shutil
+import sys
+import importlib
 
 import maya.cmds as cmds
+import maya.mel as mel
 import maya.api.OpenMaya as om
 
-__version__ = "1.1"
+__version__ = "1.9.1"
 
 RULES = ("H", "V", "N")
 
@@ -256,7 +251,9 @@ def _embed_lattice(comp, uvfaces, adj):
     occupied = set()
     for f in comp:
         co = [coord_by_uv[u] for u in uvfaces[f].ids]
-        i0, j0 = co[0]
+        # A polygon's first corner need not be the cell's lower-left corner.
+        i0 = min(i for (i, j) in co)
+        j0 = min(j for (i, j) in co)
         rel = set((i - i0, j - j0) for (i, j) in co)
         if rel != {(0, 0), (1, 0), (1, 1), (0, 1)}:
             return None
@@ -290,10 +287,20 @@ def _reshape(comp, uvfaces, coord_by_uv, rule):
     fx = fy = 0.0
     for f in comp:
         c = uvfaces[f].uv
-        ex += (c[1][0] - c[0][0]) + (c[2][0] - c[3][0])
-        ey += (c[1][1] - c[0][1]) + (c[2][1] - c[3][1])
-        fx += (c[2][0] - c[1][0]) + (c[3][0] - c[0][0])
-        fy += (c[2][1] - c[1][1]) + (c[3][1] - c[0][1])
+        co = [coord_by_uv[uid] for uid in uvfaces[f].ids]
+        # Orient each edge by the shared lattice, not local corner numbers.
+        for a in range(4):
+            b = (a + 1) % 4
+            di = co[b][0] - co[a][0]
+            dj = co[b][1] - co[a][1]
+            dx = c[b][0] - c[a][0]
+            dy = c[b][1] - c[a][1]
+            if di:
+                ex += dx * di
+                ey += dy * di
+            else:
+                fx += dx * dj
+                fy += dy * dj
     ln = math.hypot(ex, ey)
     if ln < 1e-12:
         ex, ey = 1.0, 0.0
@@ -312,18 +319,14 @@ def _reshape(comp, uvfaces, coord_by_uv, rule):
     for f in comp:
         uv = uvfaces[f].uv
         co = [coord_by_uv[x] for x in uvfaces[f].ids]
-        for a, b in ((0, 1), (2, 3)):          # U edges
+        for a in range(4):
+            b = (a + 1) % 4
             ia, ja = co[a]
             ib, jb = co[b]
-            if ia == ib:
-                continue
-            u_len.setdefault(min(ia, ib), []).append(_dist(uv[a], uv[b]))
-        for a, b in ((1, 2), (3, 0)):          # V edges
-            ia, ja = co[a]
-            ib, jb = co[b]
-            if ja == jb:
-                continue
-            v_len.setdefault(min(ja, jb), []).append(_dist(uv[a], uv[b]))
+            if ja == jb and ia != ib:
+                u_len.setdefault(min(ia, ib), []).append(_dist(uv[a], uv[b]))
+            elif ia == ib and ja != jb:
+                v_len.setdefault(min(ja, jb), []).append(_dist(uv[a], uv[b]))
 
     if not u_len or not v_len:
         return {uid: uvfaces[comp[0]].uv[k] for k, uid in enumerate(uvfaces[comp[0]].ids)}
@@ -349,8 +352,8 @@ def _reshape(comp, uvfaces, coord_by_uv, rule):
     if not handed:
         V = {j: -v for j, v in V.items()}
 
-    width = U[cols[-1]] - U[cols[0]]
-    height = V[rows[-1]] - V[rows[0]]
+    width = abs(U[cols[-1]] - U[cols[0]])
+    height = abs(V[rows[-1]] - V[rows[0]])
 
     uc = 0.5 * (U[cols[0]] + U[cols[-1]])
     vc = 0.5 * (V[rows[0]] + V[rows[-1]])
@@ -399,12 +402,23 @@ def _reshape(comp, uvfaces, coord_by_uv, rule):
 # --------------------------------------------------------------------------- #
 
 
+def _mesh_fn(shape):
+    """MFnMesh for *shape* through the API 2.0 selection list.
+
+    MSelectionList works on every Maya version that has API 2.0 (2016+), while
+    MGlobal.getSelectionListByName is only available on newer ones.
+    """
+    selection = om.MSelectionList()
+    selection.add(shape)
+    return om.MFnMesh(selection.getDependNode(0))
+
+
 def _process_shape(shape, faces, rule):
     """Returns (patches_done, patches_skipped)."""
     if not cmds.polyEvaluate(shape, face=True):
         return 0, 0
     uvset = cmds.polyUVSet(shape, query=True, currentUVSet=True)[0]
-    fn = om.MFnMesh(om.MGlobal.getSelectionListByName(shape).getDependNode(0))
+    fn = _mesh_fn(shape)
 
     if faces is None:
         faces = list(range(fn.numPolygons))
@@ -414,8 +428,8 @@ def _process_shape(shape, faces, rule):
 
     uvfaces, bad = _read_uv_faces(fn, faces, uvset)
     if bad:
-        cmds.warning("Rectangularize: %d non-quad face(s) skipped on '%s' "
-                     "(RizomUV: 'Polygons must be quad only in that method')."
+        cmds.warning(u"UV拉直: %d non-quad face(s) skipped on '%s' "
+                     "(only quad patches can be rectangularized)."
                      % (len(bad), shape))
     if not uvfaces:
         return 0, 0
@@ -425,8 +439,8 @@ def _process_shape(shape, faces, rule):
     for comp in _components(uvfaces, adj):
         emb = _embed_lattice(comp, uvfaces, adj)
         if emb is None:
-            cmds.warning("Rectangularize: a patch on '%s' is not a connected quad grid "
-                         "(RizomUV: 'Polygons are not connected') - skipped." % shape)
+            cmds.warning(u"UV拉直: '%s' 的一个 UV 区域无法映射为无冲突的四边形网格，已跳过。"
+                         u"请检查未切开的闭环、极点或重叠拓扑；这不一定表示面不相连。" % shape)
             skipped += 1
             continue
         new = _reshape(comp, uvfaces, emb[0], rule)
@@ -438,7 +452,7 @@ def _process_shape(shape, faces, rule):
 
 
 def rectangularize(rule="H", faces=None, objects=None):
-    """Rectangularize selected (or given) UV quads.
+    """UV拉直 - rebuild the selected (or given) UV quads into rectangles.
 
     rule    : "H" horizontal, "V" vertical, "N" keep the fitted orientation
     faces   : optional {object_or_shape: [face ids] or None} mapping that
@@ -461,7 +475,7 @@ def rectangularize(rule="H", faces=None, objects=None):
                 targets.append((shape, None if faces is None else faces.get(obj)))
 
     done = skipped = 0
-    cmds.undoInfo(openChunk=True, chunkName="UV矩形化")
+    cmds.undoInfo(openChunk=True, chunkName=u"UV拉直")
     try:
         for shape, face_list in targets:
             d, s = _process_shape(shape, face_list, rule)
@@ -470,7 +484,7 @@ def rectangularize(rule="H", faces=None, objects=None):
 
         cmds.refresh(force=True)
         if done == 0:
-            cmds.warning("Rectangularize: nothing to do (need selected quads forming a quad grid).")
+            cmds.warning(u"UV拉直: nothing to do (need selected quads forming a quad grid).")
         return done
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -488,6 +502,298 @@ def rectangularize_natural(*args):
     return rectangularize("N")
 
 
+# --------------------------------------------------------------------------- #
+#  one-file installer / shelf deployment
+# --------------------------------------------------------------------------- #
+
+_MODULE_NAME = "maya_uv_straighten"
+_SHELF_ANNOTATION = u"UV拉直工具"
+_SHELF_LABEL = u"UV拉直"
+# optionVar that remembers the dropped file, so the shelf command stays ASCII
+_SOURCE_OPTION = "uvStraightenSourcePath"
+
+
+def _text(value):
+    """Return *value* as text (Maya returns str or unicode on Python 2)."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value
+
+
+def _remember_source(source_path):
+    """Keep the file to sync from in an optionVar (no extra files on disk)."""
+    try:
+        if source_path:
+            cmds.optionVar(stringValue=(_SOURCE_OPTION, source_path))
+        else:
+            cmds.optionVar(remove=_SOURCE_OPTION)
+    except Exception:
+        pass
+
+
+def _source_option():
+    """The file remembered by _remember_source(), or None."""
+    try:
+        if cmds.optionVar(exists=_SOURCE_OPTION):
+            return _text(cmds.optionVar(query=_SOURCE_OPTION))
+    except Exception:
+        pass
+    return None
+
+
+def _maya_user_scripts_dir():
+    """Return Maya's per-version user Python scripts directory."""
+    path = cmds.internalVar(userScriptDir=True)
+    if not path:
+        raise RuntimeError("Maya user scripts directory is not available")
+    if not os.path.isdir(path):
+        os.makedirs(path)
+    return os.path.normpath(path)
+
+
+def _shelf_button_command():
+    """Build a self-contained Python command stored in the Maya shelf.
+
+    The command is pure ASCII: the folder of the dropped file is remembered in
+    an optionVar instead of being embedded here, so the shelf file stays valid
+    whatever encoding Maya uses for it and whatever Python version runs it.
+    """
+    return (
+        "import sys; import maya.cmds as _c; "
+        "p = _c.internalVar(userScriptDir=True); "
+        "sys.path.insert(0, p) if p not in sys.path else None; "
+        "import %s as _uvr; "
+        "_uvr.open_tool()" % _MODULE_NAME
+    )
+
+
+def _current_shelf():
+    """Return the shelf currently selected in Maya's shelf tab layout."""
+    top_level = mel.eval("$tmp=$gShelfTopLevel")
+    if not top_level or not cmds.control(top_level, exists=True):
+        return None
+    try:
+        shelf = cmds.tabLayout(top_level, query=True, selectTab=True)
+    except Exception:
+        shelf = None
+    return shelf if shelf and cmds.control(shelf, exists=True) else None
+
+
+def _save_shelf(shelf):
+    """Write the shelf to Maya's preferences folder so it survives a restart."""
+    try:
+        folder = os.path.join(cmds.internalVar(userPrefDir=True), "shelves")
+        if not os.path.isdir(folder):
+            os.makedirs(folder)
+        cmds.saveShelf(shelf, os.path.join(folder, "shelf_" + shelf))
+    except Exception:
+        pass
+
+
+def _clear_bytecode_cache(folder):
+    """Remove this module's .pyc from *folder*/__pycache__.
+
+    Python writes a bytecode cache next to a .py file the first time it is
+    imported, which is how the __pycache__ folder shows up beside the script.
+    Only this module's cache file is removed, and the folder itself only when
+    it becomes empty, so the cache of other modules is left alone.
+    """
+    try:
+        cache_dir = os.path.join(folder, "__pycache__")
+        if not os.path.isdir(cache_dir):
+            return
+        removed = False
+        for name in os.listdir(cache_dir):
+            if name.startswith(_MODULE_NAME + ".") and name.endswith(".pyc"):
+                try:
+                    os.remove(os.path.join(cache_dir, name))
+                    removed = True
+                except Exception:
+                    pass
+        if removed and not os.listdir(cache_dir):
+            os.rmdir(cache_dir)
+    except Exception:
+        pass
+
+
+def _clear_caches(*paths):
+    """Clear this module's bytecode cache next to each given file."""
+    seen = set()
+    for path in paths:
+        if not path:
+            continue
+        folder = os.path.dirname(os.path.abspath(path))
+        key = os.path.normcase(folder)
+        if key in seen:
+            continue
+        seen.add(key)
+        _clear_bytecode_cache(folder)
+
+
+def _reload_module(module):
+    """Reload *module* on Python 3 (importlib) and on Python 2 (built-in)."""
+    reloader = getattr(importlib, "reload", None)
+    if reloader is None:
+        reloader = reload
+    return reloader(module)
+
+
+def _reload_without_cache(module):
+    """_reload_module() that does not leave a .pyc behind."""
+    previous = getattr(sys, "dont_write_bytecode", False)
+    sys.dont_write_bytecode = True
+    try:
+        _reload_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+
+
+def _deploy_shelf_button():
+    """Create or replace this tool's button on the active Maya shelf."""
+    shelf = _current_shelf()
+    if not shelf:
+        raise RuntimeError("No active Maya shelf was found")
+
+    children = cmds.shelfLayout(shelf, query=True, childArray=True) or []
+    for child in children:
+        try:
+            label = cmds.shelfButton(child, query=True, label=True)
+        except Exception:
+            label = None
+        try:
+            command = cmds.shelfButton(child, query=True, command=True) or ""
+        except Exception:
+            command = ""
+        # also replaces the button of an older install of this module
+        if (_text(label) == _SHELF_LABEL or
+                (_MODULE_NAME in _text(command) and "_uvr.open_tool()" in _text(command))):
+            try:
+                cmds.deleteUI(child)
+            except Exception:
+                pass
+
+    button = cmds.shelfButton(
+        parent=shelf,
+        label=_SHELF_LABEL,
+        annotation=_SHELF_ANNOTATION,
+        image1="tweakUVLarge.png",
+        sourceType="python",
+        command=_shelf_button_command(),
+        style="iconAndTextHorizontal",
+    )
+    _save_shelf(shelf)
+    return button
+
+
+# Each action uses a persistent Python command, never a window-local callback.
+_ACTION_LABELS = {"H": u"水平拉直", "V": u"垂直拉直", "N": u"自然拉直"}
+_ACTION_ICONS = {"H": "doubleHorizArrow.png", "V": "doubleVertArrow.png",
+                 "N": "cycleList.png"}
+
+
+def _action_command(rule):
+    if rule not in RULES:
+        raise ValueError("Unknown straighten rule: %s" % rule)
+    return (
+        "import sys; import maya.cmds as _c; "
+        "p = _c.internalVar(userScriptDir=True); "
+        "sys.path.insert(0, p) if p not in sys.path else None; "
+        "import %s as _uvr; _uvr._action_click(%r)" % (_MODULE_NAME, rule)
+    )
+
+
+def add_action_to_shelf(rule, *args):
+    """Add/update just this action; do not run any UV operation."""
+    if rule not in RULES:
+        raise ValueError("Unknown straighten rule: %s" % rule)
+    shelf = _current_shelf()
+    if not shelf:
+        cmds.warning(u"请先显示工具架并选中一个工具架标签。")
+        return None
+    command = _action_command(rule)
+    tag = "UVStraighten/action/" + rule
+    for child in cmds.shelfLayout(shelf, query=True, childArray=True) or []:
+        try:
+            matched = (cmds.shelfButton(child, query=True, docTag=True) == tag or
+                       cmds.shelfButton(child, query=True, command=True) == command)
+        except Exception:
+            continue
+        if matched:
+            cmds.shelfButton(child, edit=True, command=command, sourceType="python",
+                             image1=_ACTION_ICONS[rule],
+                             style="iconAndTextHorizontal")
+            _save_shelf(shelf)
+            return child
+    button = cmds.shelfButton(
+        parent=shelf, label=_ACTION_LABELS[rule],
+        annotation=u"UV拉直工具 - " + _ACTION_LABELS[rule],
+        docTag=tag, image1=_ACTION_ICONS[rule], sourceType="python",
+        command=command, style="iconAndTextHorizontal")
+    _save_shelf(shelf)
+    return button
+
+
+def _action_click(rule):
+    """Ctrl+Shift+click installs; a plain click executes the action."""
+    if rule not in RULES:
+        raise ValueError("Unknown straighten rule: %s" % rule)
+    modifiers = cmds.getModifiers()
+    if (modifiers & 5) == 5:  # Maya: Shift=1, Ctrl=4
+        return add_action_to_shelf(rule)
+    return rectangularize(rule)
+
+
+def install(source_path=None, *args):
+    """Install this single file and add a launcher to the active shelf.
+
+    This is the entry point used when the .py file is dragged into Maya.  It
+    does not touch the current scene or modify unrelated shelf buttons.
+    """
+    source_path = source_path or globals().get("__file__")
+    if not source_path:
+        raise RuntimeError("Cannot determine the dropped script path")
+    source_path = os.path.normpath(os.path.abspath(source_path))
+
+    scripts_dir = _maya_user_scripts_dir()
+    destination = os.path.join(scripts_dir, _MODULE_NAME + ".py")
+    same_file = os.path.normcase(source_path) == os.path.normcase(destination)
+    if not same_file:
+        shutil.copy2(source_path, destination)
+    _remember_source(None if same_file else source_path)
+
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    button = _deploy_shelf_button()
+
+    # Reload the installed copy when the dropped file came from elsewhere.
+    if not same_file:
+        module = sys.modules.get(_MODULE_NAME)
+        if module is not None:
+            try:
+                _reload_without_cache(module)
+            except Exception:
+                pass
+
+    cmds.inViewMessage(
+        amg=u"<hl>UV拉直工具</hl> 已安装到 Maya scripts，并已添加到当前工具架。",
+        pos="midCenter", fade=True)
+    print("Installed: %s" % destination)
+    if not same_file:
+        print("Edits are synced from: %s" % source_path)
+    print("Shelf button created: %s" % button)
+    _clear_caches(destination, source_path)
+    return destination
+
+
+def onMayaDroppedPythonFile(file_path, *args):
+    """Maya's standard callback for a Python file dropped into its UI."""
+    try:
+        return install(file_path)
+    except Exception as exc:
+        cmds.warning("UV Straighten Tool install failed: %s" % exc)
+        raise
+
+
 def diagnose_selection():
     """Print a report about the selected UVs (why a patch is skipped, areas...).
 
@@ -499,7 +805,7 @@ def diagnose_selection():
         if not cmds.polyEvaluate(shape, face=True):
             continue
         uvset = cmds.polyUVSet(shape, query=True, currentUVSet=True)[0]
-        fn = om.MFnMesh(om.MGlobal.getSelectionListByName(shape).getDependNode(0))
+        fn = _mesh_fn(shape)
         all_faces = list(range(fn.numPolygons)) if faces is None else faces
         uvfaces, bad = _read_uv_faces(fn, all_faces, uvset)
         adj = _build_adjacency(uvfaces)
@@ -516,45 +822,212 @@ def diagnose_selection():
             report.append({'shape': shape, 'patch': idx, 'quads': len(comp),
                            'area': area, 'grid': emb is not None})
         if bad:
-            print("  ! %d non-quad face(s) are ignored (RizomUV also refuses them)" % len(bad))
+            print("  ! %d non-quad face(s) are ignored" % len(bad))
     if not report:
         print("diagnose_selection: nothing found (select UV faces or objects first).")
     return report
 
 
 # --------------------------------------------------------------------------- #
+#  keeping the installed copy in sync with the dropped file
+# --------------------------------------------------------------------------- #
+
+
+def _sync_from_source(source_path):
+    """Copy *source_path* over this installed file when its content differs.
+
+    Returns True when the module file was replaced and has to be reloaded.
+    A file that does not compile is never installed, so a typo cannot break
+    the working copy.
+    """
+    if not source_path:
+        return False
+    try:
+        source_path = os.path.normpath(os.path.abspath(source_path))
+        target = os.path.normpath(os.path.abspath(__file__))
+        if os.path.normcase(source_path) == os.path.normcase(target):
+            return False
+        with open(source_path, "rb") as f:
+            data = f.read()
+        with open(target, "rb") as f:
+            if f.read() == data:
+                return False
+        compile(data, source_path, "exec")
+        with open(target, "wb") as f:
+            f.write(data)
+        try:
+            shutil.copystat(source_path, target)
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def open_tool(source_path=None):
+    """Shelf button entry point: sync the installed copy, reload, open the UI."""
+    if not source_path:
+        source_path = _source_option()
+    _sync_from_source(source_path)
+    show = show_ui
+    module = sys.modules.get(__name__)
+    if module is not None:
+        try:
+            _reload_without_cache(module)
+            show = sys.modules[__name__].show_ui
+        except Exception:
+            show = show_ui
+    window = show()
+    _clear_caches(__file__, source_path)
+    return window
+
+
+# --------------------------------------------------------------------------- #
 #  UI
 # --------------------------------------------------------------------------- #
 
-_WIN = "rizomRectangularizeWin"
+_WIN = "uvStraightenWin"
+_WIN_TITLE = u"UV拉直工具"
+
+
+def _window_names_with_title(title):
+    """Maya window names whose title bar text is *title*."""
+    names = []
+    for name in cmds.lsUI(windows=True) or []:
+        try:
+            if _text(cmds.window(name, query=True, title=True)) == _text(title):
+                names.append(name)
+        except Exception:
+            pass
+    return names
+
+
+def _pin_on_top(window_name):
+    """Keep the window above Maya's other windows and make it freely resizable.
+
+    Maya sizes a command window to its contents, which on Windows ends up as
+    minimum size == maximum size: the frame is drawn with a resize border but
+    Qt snaps it straight back, so the window cannot be dragged.  The size
+    constraints are released here after the window is shown, and the always on
+    top flag is set with Qt.  Every step is optional: when the Qt bindings or
+    the window pointer are missing the window simply keeps Maya's behaviour.
+    """
+    try:
+        from maya import OpenMayaUI as omui
+    except Exception:
+        return False
+    try:
+        ptr = omui.MQtUtil.findWindow(window_name)
+    except Exception:
+        return False
+    if not ptr:
+        return False
+
+    try:
+        try:                              # Maya 2022 - 2024
+            from shiboken2 import wrapInstance
+            from PySide2 import QtCore, QtWidgets
+        except ImportError:               # Maya 2025+
+            from shiboken6 import wrapInstance
+            from PySide6 import QtCore, QtWidgets
+
+        flag = getattr(QtCore.Qt, "WindowStaysOnTopHint", None)
+        if flag is None:                  # PySide6 without enum shortcuts
+            flag = QtCore.Qt.WindowType.WindowStaysOnTopHint
+
+        widget = wrapInstance(int(ptr), QtWidgets.QWidget)
+        geometry = widget.geometry()      # re-applying the flags hides it
+        widget.setWindowFlags(widget.windowFlags() | flag)
+        widget.setGeometry(geometry)
+        widget.show()
+        widget.raise_()
+        widget.activateWindow()
+
+        # release the fixed size so the frame can really be dragged
+        layout = widget.layout()
+        if layout is not None:
+            try:
+                if layout.sizeConstraint() == QtWidgets.QLayout.SetFixedSize:
+                    layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+            except Exception:
+                pass
+        hint = widget.minimumSizeHint()
+        widget.setMaximumSize(16777215, 16777215)          # QWIDGETSIZE_MAX
+        widget.setMinimumSize(hint)                        # keep the buttons visible
+    except Exception:
+        return False
+    return True
+
+
+def _style_action_button(control):
+    """Style the native button without replacing Maya's drag handling."""
+    try:
+        from maya import OpenMayaUI as omui
+        try:
+            from shiboken2 import wrapInstance
+            from PySide2 import QtWidgets
+        except ImportError:
+            from shiboken6 import wrapInstance
+            from PySide6 import QtWidgets
+        ptr = omui.MQtUtil.findControl(control)
+        if not ptr:
+            return False
+        widget = wrapInstance(int(ptr), QtWidgets.QWidget)
+        widget.setProperty("uvStraightenAction", True)
+        selector = '*[uvStraightenAction="true"]'
+        widget.setStyleSheet(
+            selector + ' { background-color: #5b5b5b; border: 1px solid #747474;'
+            ' border-radius: 0px; padding: 3px 6px; color: #eeeeee; text-align: left; }'
+            + selector + ':hover { background-color: #696969; border-color: #929292; }'
+            + selector + ':pressed { background-color: #444444; border-color: #a0a0a0; }')
+        return True
+    except Exception as exc:
+        cmds.warning("UV Straighten: button styling unavailable: %s" % exc)
+        return False
 
 
 def show_ui(*args):
-    if cmds.window(_WIN, exists=True):
-        cmds.deleteUI(_WIN)
+    # The window is identified by its name: the control name plus the title
+    # shown in the title bar, so re-running this always reuses one window.
+    for name in [_WIN] + _window_names_with_title(_WIN_TITLE):
+        if cmds.window(name, exists=True):
+            cmds.deleteUI(name)
 
-    cmds.window(_WIN, title="UV矩形化", widthHeight=(320, 168),
-                sizeable=False)
+    cmds.window(_WIN, title=_WIN_TITLE, widthHeight=(230, 156),
+                sizeable=True, resizeToFitChildren=False)
     cmds.columnLayout(adjustableColumn=True, rowSpacing=6, columnAttach=("both", 8))
 
-    cmds.text(label="UV矩形化",
-              font="smallObliqueLabelFont", align="left")
-    cmds.separator(height=6, style="in")
+    for rule in RULES:
+        # Native shelfButton supplies Maya's command drag-and-drop payload.
+        # Do not replace dragCallback with an arbitrary custom message.
+        button = cmds.shelfButton(
+            label=_ACTION_LABELS[rule], height=32,
+            style="iconAndTextHorizontal", sourceType="python", align="left",
+            image1=_ACTION_ICONS[rule], docTag="UVStraighten/action/" + rule,
+            backgroundColor=(0.36, 0.36, 0.36),
+            command=_action_command(rule),
+            annotation=u"单击执行；Ctrl+Shift+单击添加到当前工具架；中键拖到工具架。")
+        _style_action_button(button)
+        popup = cmds.popupMenu(parent=button, button=3)
+        from functools import partial
+        cmds.menuItem(parent=popup, label=u"添加到当前工具架",
+                      command=partial(add_action_to_shelf, rule))
 
-    cmds.button(label="水平矩形化",
-                height=32, command=rectangularize_horizontal)
-    cmds.button(label="垂直矩形化",
-                height=32, command=rectangularize_vertical)
-    cmds.button(label="自然矩形化",
-                height=26, command=rectangularize_natural)
-
-    cmds.separator(height=4, style="none")
-    cmds.text(label="选择 UV 面或整个物体（仅支持四边面组成的连续网格）。",
-              font="smallObliqueLabelFont", align="left")
+    cmds.text(label=u"中键拖拽按钮到工具架", align="left", height=22)
 
     cmds.showWindow(_WIN)
+    # Maya can snap the window back to its content size while showing it, so
+    # the auto-fit is switched off again before the size is released in Qt.
+    try:
+        cmds.window(_WIN, edit=True, resizeToFitChildren=False)
+    except Exception:
+        pass
+    _pin_on_top(_WIN)
+    _clear_caches(__file__)
     return _WIN
 
 
 if __name__ == "__main__":
-    show_ui()
+    # Running the file directly inside Maya is treated the same as dropping
+    # it into the Maya UI: install it and deploy the shelf launcher.
+    install(__file__)
