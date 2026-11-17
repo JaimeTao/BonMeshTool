@@ -41,13 +41,10 @@ import sys
 import re
 import shutil
 
-# ---- Local UV rectangularize module ----
-_BON_MESH_TOOL_DIR = (os.path.dirname(os.path.abspath(__file__))
-                      if "__file__" in globals()
-                      else os.path.join(cmds.internalVar(userScriptDir=True), "BonMeshTool"))
-if _BON_MESH_TOOL_DIR not in sys.path:
-    sys.path.insert(0, _BON_MESH_TOOL_DIR)
-import rizom_rectangularize
+# ---- UV straighten module from this package directory ----
+from importlib import reload
+from . import maya_uv_straighten
+reload(maya_uv_straighten)
 
 # ---- Symmetry detection helpers ----
 def _mt_symmetry_on():
@@ -413,9 +410,9 @@ class BonMeshToolUI(MayaQWidgetDockableMixin, QWidget):
         uv_rect_layout.addWidget(naturalize_button)
         uv_rect_widget.setLayout(uv_rect_layout)
         Bridge_section.addWidget(uv_rect_widget)
-        horizontalize_button.clicked.connect(rizom_rectangularize.rectangularize_horizontal)
-        verticalize_button.clicked.connect(rizom_rectangularize.rectangularize_vertical)
-        naturalize_button.clicked.connect(rizom_rectangularize.rectangularize_natural)
+        horizontalize_button.clicked.connect(maya_uv_straighten.rectangularize_horizontal)
+        verticalize_button.clicked.connect(maya_uv_straighten.rectangularize_vertical)
+        naturalize_button.clicked.connect(maya_uv_straighten.rectangularize_natural)
 
         self.layout().addWidget(Bridge_section)
 
